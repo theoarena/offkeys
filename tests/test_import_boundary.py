@@ -36,6 +36,11 @@ PUBLIC_NAMES = (
     "mapper_run_pids",
     "_systemctl_user",
     "_stop_mapper_pids",
+    "report_ids",
+    "skip_interface",
+    "HidDescriptor",
+    "track_report",
+    "devices_from_config",
 )
 
 

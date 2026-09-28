@@ -3,6 +3,9 @@
 Install the mapper, assign actions (GUI or CLI), wire systemd, and debug
 hidraw. End users should use the README and the GTK app instead.
 
+The mapper opens whatever `vid:pid` list you save. The Microsoft Wireless
+Keyboard 2000 (`045e:0745`) is the default when that list is absent.
+
 Repo commands assume you are in the project directory:
 
 ```bash
@@ -11,7 +14,9 @@ cd ~/ms-keyboard-linux
 
 ## 1. One-time install
 
-Needs sudo once so this user can read the dongle’s hidraw nodes (`plugdev`).
+Needs sudo once so this user can read hidraw nodes (`plugdev`). The udev
+rule matches every hidraw node. The mapper still opens only devices listed
+in config, and keyboard and mouse interfaces are skipped in software.
 `sudo` writes the systemd user unit into **your** home (`$SUDO_USER`), not `/root`.
 
 ```bash
@@ -19,10 +24,15 @@ sudo python3 mskb.py install
 python3 mskb.py status
 ```
 
-`status` must show hidraw `input1` and `input2` as **readable**. If they are
-denied, unplug and replug the Microsoft USB dongle.
+Unplug and plug the receiver back in once if a node stays permission denied.
+
+`python3 mskb.py status` lists every hidraw and marks keyboard/mouse
+interfaces separately from extra keys. It also prints the config path and
+whether uinput is writable.
 
 ## 2. See what a physical key is called
+
+`probe` and `learn` follow that same `devices` list.
 
 ```bash
 python3 mskb.py probe
@@ -31,15 +41,20 @@ python3 mskb.py probe
 Press each extra key once. Do **not** type in that terminal (the probe is
 listening to the keyboard). Stop with Ctrl+C.
 
-Expected ids on this Wireless Keyboard 2000 (`045e:0745`):
+On the Wireless Keyboard 2000, these names still work. They win over a
+generic id for the same press (`favorites_star` wins over
+`045e:0745:000c:0182`):
 
 | Physical key | Config id | Default `key` |
 | --- | --- | --- |
 | My Favorites 1–5 | `favorites_1` … `favorites_5` | F14–F18 |
-| My Favorites (star) | `favorites_star` (`consumer_0x0182`) | F13 |
+| My Favorites (star) | `favorites_star` | F13 |
 
-Volume, mute, play, mail, calculator, zoom usually already reach the desktop
-as normal media keys. Bind those in Zorin Settings → Keyboard, not here.
+A learned id looks like `{vid}:{pid}:{page}:{usage}`, plus `:{value}` when
+the field is wider than 1 bit:
+
+- `045e:0745:000c:0182`
+- `045e:0745:ff05:0001:4`
 
 Unknown extra key:
 
@@ -47,11 +62,20 @@ Unknown extra key:
 python3 mskb.py learn some_name
 ```
 
-`probe -v` prints firmware status bits. Those are not keys.
+`learn some_name` still writes the config.
+
+Report `0x21` on the 2000 is status, not a key. `probe -v` prints that
+report; it is not a binding id.
+
+Volume and other keys the kernel already emits are still configured in the
+desktop settings, not here.
 
 ## 3. Assign shortcuts
 
-The default way to assign My Favorites is the GTK window:
+`devices` in `~/.config/mskb/config.json` is the list of `vid:pid` the
+mapper opens. Absent means `045e:0745`.
+
+The default way to assign keys is the GTK window:
 
 ```bash
 python3 mskb.py gui
@@ -63,13 +87,14 @@ Needs GTK4 and libadwaita (Ubuntu 22.04+ / Zorin 18):
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
-Pick a key (star, 1–5), choose Open app, System shortcut, Command, or
-Nothing, then **Apply**. That writes `~/.config/mskb/config.json` and
-restarts `mskb.service` (`systemctl --user restart`, or `enable --now` if
-the unit was inactive) so the binding works immediately. The header
-**Restart Mapper** button does the same reload without saving. Apply also
-removes any GNOME Startup Applications entry that launches `mskb.py run`
-(those conflict with the systemd unit and dual-fire Favorites).
+Choose the keyboard, pick a listed key or add one by pressing it, choose
+Open app, System shortcut, Command, or Nothing, then **Apply**. Apply in
+the GUI replaces the bindings map (removed keys stay removed) and restarts
+`mskb.service` (`systemctl --user restart`, or `enable --now` if the unit
+was inactive) so the binding works immediately. The header **Restart
+Mapper** button reloads without saving. Apply also removes any GNOME
+Startup Applications entry that launches `mskb.py run` (those conflict
+with the systemd unit and dual-fire keys).
 
 The first launch also installs a menu entry
 (`~/.local/share/applications/mskb.desktop`). `sudo python3 mskb.py install`
@@ -80,6 +105,7 @@ the mapper afterwards (section 4).
 
 ```json
 {
+  "devices": ["045e:0745"],
   "bindings": {
     "favorites_1": { "key": "", "exec": "/usr/bin/flatpak run md.obsidian.Obsidian" },
     "favorites_2": { "key": "F15", "exec": "" },
@@ -93,12 +119,13 @@ the mapper afterwards (section 4).
 
 | Field | Meaning |
 | --- | --- |
+| `devices` | `vid:pid` values the mapper, `probe`, and `learn` open. Absent means `045e:0745`. |
 | `key` | Virtual key via uinput. Record it in Zorin Settings → Keyboard → Shortcuts. Empty string = do not emit. |
 | `exec` | Shell command on press. Empty string = do not run a command. |
 
-The GUI writes **one** of those fields, never both. The mapper still
-fires both if a hand-edited file sets them (Favorite 1 with Obsidian
-**and** F14). Apply on that key in the GUI keeps `exec` and clears `key`.
+The GUI writes **one** of `key` or `exec` on a binding, never both. The
+mapper still fires both if a hand-edited file sets them (Favorite 1 with
+Obsidian **and** F14).
 
 `exec` is a normal command, not a `.desktop` Exec line. Do not copy
 `--file-forwarding @@u %U @@` from Flatpak desktop files; there is no URI
@@ -128,7 +155,7 @@ systemctl --user enable --now mskb.service
 
 `sudo python3 mskb.py install` writes the unit, removes conflicting GNOME
 autostart entries that launch `mskb.py run`, and tries `enable --now` when
-the user bus is reachable.
+the user bus is reachable. The unit description is `HID extra-key mapper`.
 
 - `enable` — start on future graphical logins (`graphical-session.target`)
 - `--now` — start immediately
@@ -154,17 +181,20 @@ systemctl --user restart mskb.service
 
 Do **not** add `mskb.py run` (or `systemctl enable`) under GNOME “Startup
 Applications” / “Aplicativos iniciais”. That starts a second mapper beside
-the unit; Favorites fire twice. Install and the GUI delete those conflicting
+the unit; keys fire twice. Install and the GUI delete those conflicting
 `.desktop` files automatically when they launch `mskb.py run`.
 
 ## 5. CLI reference
 
 | Command | Role |
 | --- | --- |
-| `mskb.py status` | Dongle, hidraw permissions, config path |
-| `mskb.py probe` | Print `PRESS` / `RELEASE` for extra keys |
-| `mskb.py learn NAME` | Capture the next extra key into the config |
-| `mskb.py gui` | Assign My Favorites (GTK4) |
-| `mskb.py run` | Mapper (uinput + `exec`) |
+| `mskb.py status` | Every hidraw, marked `[keyboard/mouse]` or `[extra keys]`, plus config path |
+| `mskb.py probe` | Print `PRESS` / `RELEASE` for extra keys on the `devices` list |
+| `mskb.py learn NAME` | Capture the next extra key and write it into the config |
+| `mskb.py gui` | Assign extra keys (GTK4) |
+| `mskb.py run` | Mapper (uinput + `exec`) on the `devices` list |
 | `sudo mskb.py install` | udev + hwdb + user unit + desktop entry |
-| `sudo mskb.py bind-driver --yes` | Experimental: bind `hid-microsoft` (glitches mouse; do not combine with `run`) |
+| `sudo mskb.py bind-driver --yes` | Experimental, `045e:0745` only: bind `hid-microsoft` (glitches mouse; do not combine with `run`) |
+
+`bind-driver` and `udev/61-mskb.hwdb` stay specific to `045e:0745`. The
+broad hidraw rule does not change that driver binding.

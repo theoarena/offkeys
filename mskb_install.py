@@ -48,7 +48,7 @@ def _install_user_service() -> None:
         "\n".join(
             [
                 "[Unit]",
-                "Description=Microsoft Keyboard 2000 extra-key mapper",
+                "Description=HID extra-key mapper",
                 "After=graphical-session.target",
                 "PartOf=graphical-session.target",
                 "",
@@ -124,7 +124,7 @@ def ensure_desktop_file() -> Path:
                 "[Desktop Entry]",
                 "Type=Application",
                 "Name=Microsoft Keyboard",
-                "Comment=Assign My Favorites keys",
+                "Comment=Assign extra keyboard keys",
                 f"Exec={python} {REPO_ROOT / 'mskb.py'} gui",
                 "Icon=input-keyboard",
                 "Terminal=false",

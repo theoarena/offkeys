@@ -1,5 +1,6 @@
 {
   "_comment": "Match ids printed by `python3 mskb.py probe`. `key` is emitted via uinput (bind it in Zorin Settings → Keyboard). `exec` runs on key press. Empty string disables that action.",
+  "devices": ["045e:0745"],
   "bindings": {
     "favorites_1": { "key": "F14", "exec": "" },
     "favorites_2": { "key": "F15", "exec": "" },

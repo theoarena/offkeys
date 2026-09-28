@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import mskb  # noqa: E402
+import mskb_bindings  # noqa: E402
 
 
 class StripFieldCodesTests(unittest.TestCase):
@@ -140,6 +141,92 @@ class SaveConfigTests(unittest.TestCase):
             self.assertEqual(on_disk["bindings"]["favorites_1"], payload["bindings"]["favorites_1"])
             self.assertEqual(written["bindings"]["favorites_1"], payload["bindings"]["favorites_1"])
             self.assertIn("favorites_star", on_disk["bindings"])
+
+    def test_replace_bindings_drops_omitted_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "bindings": {
+                            "chat": {"key": "CHAT", "exec": ""},
+                            "favorites_star": {"key": "F13", "exec": ""},
+                        }
+                    }
+                )
+                + "\n"
+            )
+            payload = {"bindings": {"favorites_1": {"key": "F14", "exec": ""}}}
+            mskb.save_config(path, payload, replace_bindings=True)
+            data = json.loads(path.read_text())
+            self.assertEqual(
+                data["bindings"],
+                {"favorites_1": {"key": "F14", "exec": ""}},
+            )
+            self.assertNotIn("chat", data["bindings"])
+            self.assertNotIn("favorites_star", data["bindings"])
+
+    def test_same_payload_without_replace_keeps_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "bindings": {
+                            "chat": {"key": "CHAT", "exec": ""},
+                            "favorites_star": {"key": "F13", "exec": ""},
+                        }
+                    }
+                )
+                + "\n"
+            )
+            payload = {"bindings": {"favorites_1": {"key": "F14", "exec": ""}}}
+            mskb.save_config(path, payload)
+            data = json.loads(path.read_text())
+            self.assertEqual(data["bindings"]["chat"], {"key": "CHAT", "exec": ""})
+            self.assertIn("favorites_star", data["bindings"])
+            self.assertEqual(
+                data["bindings"]["favorites_1"],
+                {"key": "F14", "exec": ""},
+            )
+
+    def test_replace_on_new_file_omits_default_favorites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            mskb.save_config(
+                path,
+                {"bindings": {"favorites_1": {"key": "F14", "exec": ""}}},
+                replace_bindings=True,
+            )
+            data = json.loads(path.read_text())
+            self.assertEqual(
+                data["bindings"],
+                {"favorites_1": {"key": "F14", "exec": ""}},
+            )
+            self.assertNotIn("favorites_star", data["bindings"])
+
+
+class DevicesFromConfigTests(unittest.TestCase):
+    def test_missing_or_empty_uses_microsoft_default(self) -> None:
+        self.assertEqual(mskb_bindings.devices_from_config({}), ["045e:0745"])
+        self.assertEqual(
+            mskb_bindings.devices_from_config({"devices": []}),
+            ["045e:0745"],
+        )
+        self.assertEqual(
+            mskb_bindings.devices_from_config({"devices": "045e:0745"}),
+            ["045e:0745"],
+        )
+
+    def test_explicit_list_is_kept(self) -> None:
+        self.assertEqual(
+            mskb_bindings.devices_from_config({"devices": ["046d:c52b"]}),
+            ["046d:c52b"],
+        )
+        self.assertEqual(
+            mskb_bindings.devices_from_config({"devices": ["045E:0745"]}),
+            ["045e:0745"],
+        )
 
 
 class MapperCmdlineTests(unittest.TestCase):

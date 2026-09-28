@@ -22,6 +22,7 @@ from mskb_bindings import (  # noqa: F401
     FAVORITE_IDS,
     SYSTEM_SHORTCUT_KEYS,
     binding_for_kind,
+    devices_from_config,
     ensure_config,
     kind_for_binding,
     load_config,
@@ -31,12 +32,17 @@ from mskb_bindings import (  # noqa: F401
 )
 from mskb_hid import (  # noqa: F401
     UINPUT_PATH,
+    HidDescriptor,
+    ParsedReport,
     decode_report,
     evdev_devices,
     format_report,
     hidraw_devices,
     open_hidraw,
     primary_id,
+    report_ids,
+    skip_interface,
+    track_report,
 )
 from mskb_install import (  # noqa: F401
     cmd_bind_driver,
@@ -65,18 +71,25 @@ from mskb_paths import (  # noqa: F401
 
 
 def cmd_status(_: argparse.Namespace) -> int:
+    """List every hidraw node and whether learn would open it.
+
+    The role follows skip_interface so a boot keyboard is not labeled as
+    extra keys. Any vid:pid can appear; this command does not treat one
+    receiver as the only one.
+    @tags: #subject/cli #type/command #model/hid
+    """
     path = config_path()
-    print("Receiver: Microsoft 045e:0745 (2.4GHz Transceiver v7.0)")
     print("Kernel driver: hid-generic (hid-microsoft is NOT bound — Favorites are dropped)")
     print(f"Config: {path} {'(exists)' if path.exists() else '(missing)'}")
     print("hidraw:")
     devices = hidraw_devices()
     if not devices:
-        print("  (none found — is the dongle plugged in?)")
+        print("  (none found — is a receiver plugged in?)")
     for dev in devices:
         readable = os.access(dev.path, os.R_OK)
-        extra = "" if dev.iface == "input0" else " [extra keys]"
-        print(f"  {dev.path}  {dev.iface}  {'readable' if readable else 'permission denied'}{extra}")
+        role = "[keyboard/mouse]" if skip_interface(dev.descriptor) else "[extra keys]"
+        state = "readable" if readable else "permission denied"
+        print(f"  {dev.vid}:{dev.pid}  {dev.name}  {dev.path}  {dev.iface}  {state}  {role}")
     print("evdev:")
     for event_path in evdev_devices():
         print(f"  {event_path}  {'readable' if os.access(event_path, os.R_OK) else 'permission denied'}")
@@ -85,11 +98,20 @@ def cmd_status(_: argparse.Namespace) -> int:
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
-    """Print press/release for extra keys. Ignores boot keyboard and 0x21 status bits."""
-    opened = open_hidraw()
+    """Print press/release from track_report ids, one held key per source.
+
+    Report 0x21 is status. It must not count as the release of a key another
+    report id on the same interface is still holding. The first frame of each
+    source is an idle snapshot, so a key already down at start is silent
+    until it is released and pressed.
+    @tags: #subject/cli #type/command #model/hid
+    """
+    config = load_config(ensure_config())
+    opened = open_hidraw(devices_from_config(config))
     print("Listening on extra-key interfaces. Press Favorites 1–5, star, Mail, Calc, Zoom, media.")
     print("Do not type in this terminal (Ctrl+C is enough to stop).")
-    held: str | None = None
+    baselines: dict[tuple[str, int], bytes] = {}
+    held: dict[tuple[str, int], str] = {}
     fds = {fd: dev for fd, dev in opened}
     try:
         while True:
@@ -99,29 +121,33 @@ def cmd_probe(args: argparse.Namespace) -> int:
                     data = os.read(fd, 64)
                 except BlockingIOError:
                     continue
-                parsed = decode_report(data)
-                if parsed is None:
-                    if args.verbose and data:
-                        print(f"{fds[fd].iface} raw {data.hex(' ')}")
-                    continue
-                if parsed.report_id == 0x21:
+                dev = fds[fd]
+                source = (dev.iface, data[0] if data else 0)
+                if source[1] == 0x21:
                     if args.verbose:
-                        print(f"{fds[fd].iface} status {format_report(parsed)}")
+                        parsed = decode_report(data)
+                        if parsed is not None:
+                            print(f"{dev.iface} status {format_report(parsed)}")
                     continue
-                if parsed.report_id not in (0x07, 0x16):
-                    continue
+                descriptor = HidDescriptor(device=f"{dev.vid}:{dev.pid}", raw=dev.descriptor)
+                baseline, ids = track_report(baselines.get(source), data, descriptor)
+                baselines[source] = baseline
+                parsed = ParsedReport(report_id=source[1], raw=data, ids=ids)
                 current = primary_id(parsed)
-                if current == held:
+                previous = held.get(source)
+                if current == previous:
+                    if args.verbose and data and not ids and decode_report(data) is None:
+                        print(f"{dev.iface} raw {data.hex(' ')}")
                     continue
-                if held and not current:
-                    print(f"RELEASE {held}")
-                    held = None
+                if previous and not current:
+                    print(f"RELEASE {previous}")
+                    held.pop(source, None)
                     continue
                 if current:
-                    if held:
-                        print(f"RELEASE {held}")
-                    print(f"PRESS   {current}  {parsed.raw.hex(' ')}")
-                    held = current
+                    if previous:
+                        print(f"RELEASE {previous}")
+                    print(f"PRESS   {current}  {data.hex(' ')}")
+                    held[source] = current
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
@@ -134,10 +160,12 @@ def cmd_learn(args: argparse.Namespace) -> int:
     """Capture the next extra key and print the binding id to add to config.
     @tags: #action/save #model/config #side-effect/mutation #subject/cli #type/command
     """
-    opened = open_hidraw()
+    config = load_config(ensure_config())
+    opened = open_hidraw(devices_from_config(config))
     target = args.name
     print(f"Press the physical key to bind as {target!r}. Ctrl+C to cancel.")
     fds = {fd: dev for fd, dev in opened}
+    baselines: dict[tuple[str, int], bytes] = {}
     captured = None
     try:
         while captured is None:
@@ -147,10 +175,18 @@ def cmd_learn(args: argparse.Namespace) -> int:
                     data = os.read(fd, 64)
                 except BlockingIOError:
                     continue
-                parsed = decode_report(data)
-                if parsed and parsed.report_id in (0x07, 0x16) and parsed.ids:
-                    captured = parsed
-                    break
+                dev = fds[fd]
+                source = (dev.iface, data[0] if data else 0)
+                # Same status report probe ignores. It never names a key to save.
+                if source[1] == 0x21:
+                    continue
+                descriptor = HidDescriptor(device=f"{dev.vid}:{dev.pid}", raw=dev.descriptor)
+                baseline, ids = track_report(baselines.get(source), data, descriptor)
+                baselines[source] = baseline
+                if not ids:
+                    continue
+                captured = ParsedReport(report_id=source[1], raw=data, ids=ids)
+                break
     except KeyboardInterrupt:
         print("\nCancelled.")
         return 1

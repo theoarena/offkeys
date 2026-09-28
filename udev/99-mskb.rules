@@ -1,10 +1,9 @@
-# Microsoft 2.4GHz Transceiver v7.0 (045e:0745)
-# Extra keys live on hidraw; hid-generic never turns vendor usage 0xff05
-# into evdev events. Grant the seat/plugdev read access so mskb.py can.
+# Extra keys arrive as hidraw. The mapper still opens only devices listed
+# in config. Keyboard and mouse interfaces are skipped in software.
 #
 # After install: sudo udevadm control --reload && sudo udevadm trigger -s hidraw
-# Then unplug/replug the dongle if permissions did not change.
+# Then unplug/replug the receiver if permissions did not change.
 
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="0745", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNEL=="hidraw*", GROUP="plugdev", MODE="0660", TAG+="uaccess"
 
 KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"

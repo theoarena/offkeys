@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
         "Match keys from `mskb.py probe`. `key` is emitted via uinput "
         "(bind it in Zorin Settings → Keyboard). `exec` runs on press."
     ),
+    "devices": ["045e:0745"],
     "bindings": {
         "favorites_1": {"key": "F14", "exec": ""},
         "favorites_2": {"key": "F15", "exec": ""},
@@ -63,6 +64,20 @@ _DESKTOP_FIELD_CODES = {
     "%v",
     "%m",
 }
+
+
+def devices_from_config(config: dict) -> list[str]:
+    """HID ids a saved config wants opened, as `vid:pid` strings.
+
+    Missing, empty, or non-list `devices` falls back to the list on
+    DEFAULT_CONFIG so an older config.json still names the keyboard.
+    This module does not open the devices.
+    @tags: #action/normalize #model/config #type/helper
+    """
+    devices = config.get("devices")
+    if isinstance(devices, list) and devices:
+        return [str(item).strip().lower() for item in devices if str(item).strip()]
+    return [str(item) for item in DEFAULT_CONFIG["devices"]]
 
 
 def load_config(path: Path) -> dict:
@@ -156,12 +171,16 @@ def shortcut_key_choices(current: str = "") -> list[str]:
     return keys
 
 
-def save_config(path: Path, config: dict) -> dict:
+def save_config(path: Path, config: dict, *, replace_bindings: bool = False) -> dict:
     """Atomically merge and write config so a crash cannot truncate the file.
 
-    Bindings are merged, not replaced: a favorite-only GUI save keeps ids that
-    `learn` added. Other top-level keys on disk are kept unless `config` sets
-    them. Returns the merged document that was written.
+    Bindings are merged by default: a favorite-only GUI save keeps ids that
+    `learn` added. The favorites window can also delete a key; without
+    `replace_bindings` that merge kept the removed id forever. Set the flag
+    so the written map is exactly the payload bindings. Other top-level keys
+    on disk are kept unless `config` sets them. A new file still starts from
+    DEFAULT_CONFIG, but the flag drops seeded favorites the payload left out.
+    Returns the merged document that was written.
     @tags: #action/save #action/merge #model/config #side-effect/file #side-effect/mutation
     """
     if path.exists():
@@ -169,6 +188,7 @@ def save_config(path: Path, config: dict) -> dict:
     else:
         existing = {
             "_comment": DEFAULT_CONFIG["_comment"],
+            "devices": list(DEFAULT_CONFIG["devices"]),
             "bindings": dict(DEFAULT_CONFIG["bindings"]),
         }
     merged = dict(existing)
@@ -176,9 +196,12 @@ def save_config(path: Path, config: dict) -> dict:
         if key == "bindings":
             continue
         merged[key] = value
-    bindings = dict(existing.get("bindings") or {})
-    bindings.update(config.get("bindings") or {})
-    merged["bindings"] = bindings
+    if replace_bindings:
+        merged["bindings"] = dict(config.get("bindings") or {})
+    else:
+        bindings = dict(existing.get("bindings") or {})
+        bindings.update(config.get("bindings") or {})
+        merged["bindings"] = bindings
     path.parent.mkdir(parents=True, exist_ok=True)
     _chown_user(path.parent)
     tmp = path.with_name(path.name + ".tmp")
