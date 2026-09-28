@@ -6,6 +6,8 @@
 # dual-fires when both key and exec are set; this module only projects
 # that contract for the favorites window. An optional `label` is a display
 # title and is not part of that pair.
+# Card captions and keyboard labels are pure strings so the window tests
+# stay free of GTK.
 #
 # Used by: mskb_gui.py (via mskb), mskb_mapper.py, mskb_install.py
 # See also: mskb_paths.py
@@ -332,19 +334,96 @@ def binding_label(value: object) -> str:
     return str(value).strip()
 
 
-def key_card_text(key_id: str, binding: object, fallback: str) -> tuple[str, str]:
-    """Title and caption for one key card.
+# A longer shell line does not fit a card. The form still stores the full command.
+_COMMAND_SUMMARY_MAX = 32
 
-    A custom title keeps the HID id underneath so two cards can share a name.
-    Without a title the fallback is the only line: favorite names stay single,
-    and a learned id with no title stays the raw id.
-    @tags: #action/normalize #model/binding #subject/form #type/helper
+
+def action_summary(kind: str, detail: str = "") -> str:
+    """One line for what a key does, using a name the caller already resolved.
+
+    App names come from the desktop (`Gio.AppInfo` display name). This helper
+    does not translate them. A command longer than a card caption becomes a
+    generic line so the grid stays scannable.
+    @tags: #action/normalize #format/string #model/binding #model/shortcut #subject/form #type/helper
+    """
+    detail = (detail or "").strip()
+    if kind == "app":
+        return f"Opens {detail}" if detail else "Opens an app"
+    if kind == "key":
+        return f"Sends {detail}" if detail else "Sends a shortcut"
+    if kind == "command":
+        if detail and len(detail) <= _COMMAND_SUMMARY_MAX:
+            return detail
+        return "Runs a command"
+    return "Does nothing"
+
+
+def keyboard_display_name(raw: str) -> str:
+    """Short product label for the keyboard combo.
+
+    HID names often repeat the vendor and append a mark (`Microsoft Microsoft®`).
+    The full string stays available as the tooltip; the closed row needs the
+    short form so it is not ellipsized into noise.
+    @tags: #action/normalize #format/string #model/hid #subject/form #type/helper
+    """
+    text = raw or ""
+    for mark in ("®", "™", "©"):
+        text = text.replace(mark, "")
+    words = text.split()
+    if len(words) >= 2 and words[0].casefold() == words[1].casefold():
+        del words[1]
+    return " ".join(words)
+
+
+def keyboard_row_subtitle(vidpid: str, *, present: bool) -> str:
+    """vid:pid under the keyboard row, marked when the scan did not see it.
+
+    The window does not watch hotplug. `present` is the scan from when the
+    combo was built, so a saved receiver can stay selectable while unplugged.
+    @tags: #action/normalize #format/string #model/hid #subject/form #type/helper
+    """
+    vidpid = (vidpid or "").strip()
+    if not vidpid:
+        return "No keyboard selected"
+    if present:
+        return vidpid
+    return f"{vidpid} · Unplugged"
+
+
+def ids_sharing_title(titles: dict[str, str]) -> set[str]:
+    """Ids whose card title is used by another id on the same keyboard.
+
+    The HID id stays off the card until two titles would look identical.
+    @tags: #action/normalize #model/binding #model/favorite #subject/form #type/helper
+    """
+    counts: dict[str, int] = {}
+    for title in titles.values():
+        counts[title] = counts.get(title, 0) + 1
+    return {key_id for key_id, title in titles.items() if counts[title] > 1}
+
+
+def key_card_text(
+    key_id: str,
+    binding: object,
+    fallback: str,
+    summary: str = "",
+    *,
+    show_id: bool = False,
+) -> tuple[str, str, str]:
+    """Title, action line, and optional id line for one key card.
+
+    The action line is the caption. The id is a third line only when
+    `show_id` is set (two cards share a title). Without a custom title the
+    fallback is the name: favorite labels stay, and a learned id with no
+    title stays the raw id.
+    @tags: #action/normalize #format/string #model/binding #model/favorite #subject/form #type/helper
     """
     raw = binding.get("label") if isinstance(binding, dict) else None
     label = binding_label(raw)
-    if label:
-        return label, key_id
-    return fallback, ""
+    title = label or fallback
+    caption = (summary or "").strip()
+    id_line = key_id if show_id else ""
+    return title, caption, id_line
 
 
 def binding_for_kind(kind: str, value: str = "") -> dict:

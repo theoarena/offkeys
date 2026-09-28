@@ -83,7 +83,7 @@ The default way to assign keys is the GTK window:
 python3 mskb.py gui
 ```
 
-Needs GTK4 and libadwaita (Ubuntu 22.04+ / Zorin 18):
+Needs GTK4 and libadwaita 1.5 (Ubuntu 24.04 / Zorin 18):
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
@@ -91,12 +91,17 @@ sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 
 Choose the keyboard, pick a listed key or add one by pressing it, choose
 Open app, System shortcut, Command, or Nothing, then **Apply**. Cards are
-only the keys for the selected keyboard. Apply in the GUI replaces the
+only the keys for the selected keyboard, and each card shows the action
+(open an app, send F13–F24, run a command, or do nothing). Application
+names in the combo are the desktop display names, not a list this app
+translates. Add key shows a bar asking for the press; Cancel stops it.
+Removing a key can be undone until you remove another one. Closing with
+unsaved edits asks before discarding them. Apply in the GUI replaces the
 nested bindings maps (removed keys stay removed on that device; other
 keyboards keep theirs) and restarts
 `mskb.service` (`systemctl --user restart`, or `enable --now` if the unit
-was inactive) so the binding works immediately. The header **Restart
-Mapper** button reloads without saving. Apply also removes any GNOME
+was inactive) so the binding works immediately. **Restart mapper** in the
+window menu reloads without saving. Apply also removes any GNOME
 Startup Applications entry that launches `mskb.py run` (those conflict
 with the systemd unit and dual-fire keys).
 

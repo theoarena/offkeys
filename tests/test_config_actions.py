@@ -102,27 +102,116 @@ class BindingLabelTests(unittest.TestCase):
             )
 
 
+class ActionSummaryTests(unittest.TestCase):
+    def test_app_uses_caller_name(self) -> None:
+        self.assertEqual(mskb.action_summary("app", "Arquivos"), "Opens Arquivos")
+
+    def test_app_without_name(self) -> None:
+        self.assertEqual(mskb.action_summary("app", "  "), "Opens an app")
+
+    def test_shortcut(self) -> None:
+        self.assertEqual(mskb.action_summary("key", "F15"), "Sends F15")
+        self.assertEqual(mskb.action_summary("key", ""), "Sends a shortcut")
+
+    def test_short_command_is_the_command(self) -> None:
+        self.assertEqual(mskb.action_summary("command", "notify-send hi"), "notify-send hi")
+        self.assertEqual(mskb.action_summary("command", "x" * 32), "x" * 32)
+
+    def test_long_or_empty_command_is_generic(self) -> None:
+        self.assertEqual(mskb.action_summary("command", "x" * 33), "Runs a command")
+        self.assertEqual(mskb.action_summary("command", "   "), "Runs a command")
+
+    def test_nothing(self) -> None:
+        self.assertEqual(mskb.action_summary("none", ""), "Does nothing")
+        self.assertEqual(mskb.action_summary("other", "x"), "Does nothing")
+
+
 class KeyCardTextTests(unittest.TestCase):
-    def test_custom_title_keeps_id_as_caption(self) -> None:
+    def test_custom_title_shows_summary_not_id(self) -> None:
         binding = {"key": "", "exec": "", "label": "Home"}
         self.assertEqual(
-            mskb.key_card_text("consumer_0x0223", binding, "consumer_0x0223"),
-            ("Home", "consumer_0x0223"),
+            mskb.key_card_text(
+                "consumer_0x0223",
+                binding,
+                "consumer_0x0223",
+                "Opens Arquivos",
+            ),
+            ("Home", "Opens Arquivos", ""),
         )
 
-    def test_favorite_without_label_has_empty_caption(self) -> None:
+    def test_shared_title_keeps_id_line(self) -> None:
+        binding = {"label": "Home"}
+        self.assertEqual(
+            mskb.key_card_text(
+                "consumer_0x0223",
+                binding,
+                "consumer_0x0223",
+                "Opens Arquivos",
+                show_id=True,
+            ),
+            ("Home", "Opens Arquivos", "consumer_0x0223"),
+        )
+
+    def test_favorite_without_label_uses_fallback(self) -> None:
         binding = {"key": "F14", "exec": ""}
         self.assertEqual(
-            mskb.key_card_text("favorites_1", binding, "Favorite 1"),
-            ("Favorite 1", ""),
+            mskb.key_card_text("favorites_1", binding, "Favorite 1", "Sends F14"),
+            ("Favorite 1", "Sends F14", ""),
         )
 
     def test_blank_label_uses_fallback(self) -> None:
         binding = {"key": "", "exec": "", "label": "   "}
         self.assertEqual(
-            mskb.key_card_text("consumer_0x0223", binding, "consumer_0x0223"),
-            ("consumer_0x0223", ""),
+            mskb.key_card_text(
+                "consumer_0x0223",
+                binding,
+                "consumer_0x0223",
+                "Does nothing",
+            ),
+            ("consumer_0x0223", "Does nothing", ""),
         )
+
+
+class KeyboardLabelTests(unittest.TestCase):
+    def test_drops_repeated_vendor_and_marks(self) -> None:
+        self.assertEqual(
+            mskb.keyboard_display_name("Microsoft Microsoft® 2.4GHz Transceiver"),
+            "Microsoft 2.4GHz Transceiver",
+        )
+        self.assertEqual(
+            mskb.keyboard_display_name("Microsoft® Microsoft 2.4GHz"),
+            "Microsoft 2.4GHz",
+        )
+
+    def test_plain_name_stays(self) -> None:
+        self.assertEqual(
+            mskb.keyboard_display_name("Logitech USB Receiver"),
+            "Logitech USB Receiver",
+        )
+        self.assertEqual(mskb.keyboard_display_name("Foo™ Bar"), "Foo Bar")
+
+    def test_blank_is_empty(self) -> None:
+        self.assertEqual(mskb.keyboard_display_name("   "), "")
+        self.assertEqual(mskb.keyboard_display_name(""), "")
+
+    def test_subtitle_plugged_saved_and_missing(self) -> None:
+        self.assertEqual(
+            mskb.keyboard_row_subtitle("045e:0745", present=True),
+            "045e:0745",
+        )
+        self.assertEqual(
+            mskb.keyboard_row_subtitle("045e:0745", present=False),
+            "045e:0745 · Unplugged",
+        )
+        self.assertEqual(
+            mskb.keyboard_row_subtitle("  ", present=True),
+            "No keyboard selected",
+        )
+
+    def test_shared_titles(self) -> None:
+        titles = {"a": "Home", "b": "Home", "c": "Favorite 1"}
+        self.assertEqual(mskb.ids_sharing_title(titles), {"a", "b"})
+        self.assertEqual(mskb.ids_sharing_title({"a": "Home"}), set())
 
 
 class ShortcutChoicesTests(unittest.TestCase):

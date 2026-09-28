@@ -21,11 +21,11 @@ You use a keyboard on a Linux desktop, such as GNOME or Zorin, and you want an e
 The window is titled **Microsoft Keyboard**.
 
 1. Choose the keyboard. The keys on the screen belong to that keyboard. A keyboard you have not set up yet starts with none, unless it is the Wireless Keyboard 2000 (My Favorites are already there).
-2. Pick a listed key, or add one by pressing it.
-3. Choose **Open app**, **System shortcut**, **Command**, or **Nothing**.
+2. Pick a listed key, or add one by pressing it. The window asks you to press the extra key, and **Cancel** stops listening.
+3. Each key shows what it does. Choose **Open app**, **System shortcut**, **Command**, or **Nothing**. Application names are the ones already on this computer.
 4. Select **Apply**.
 
-The key works immediately and after the next login.
+The key works immediately and after the next login. Closing the window with changes you have not applied asks you to keep editing or discard them.
 
 
 | Action          | What you get                                                                                                   |
@@ -36,7 +36,7 @@ The key works immediately and after the next login.
 | Nothing         | The key stays quiet.                                                                                           |
 
 
-**Restart Mapper**, in the header, reloads your keys without changing what you saved. Use it when a key does not respond.
+**Restart mapper**, in the window menu, reloads your keys without changing what you saved. Use it when a key does not respond.
 
 > [!NOTE]
 > The app starts your keys when you sign in
@@ -55,7 +55,7 @@ sudo python3 mskb.py install
 
 Unplug the keyboard and plug it back in once, so the new hidraw permission applies.
 
-On Ubuntu, install the window toolkit if the app does not open:
+On Ubuntu 24.04 or Zorin 18, install the window toolkit if the app does not open. The window needs libadwaita 1.5:
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
