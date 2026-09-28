@@ -129,6 +129,36 @@ class ReportIdsTests(unittest.TestCase):
         self.assertEqual(ids[0], "favorites_1")
         self.assertTrue(any(item.startswith("045e:0745:") for item in ids[1:]))
 
+    def test_other_device_does_not_inherit_favorites(self) -> None:
+        desc = HidDescriptor(
+            device="046d:c52b",
+            raw=bytes(
+                [
+                    0x05,
+                    0x0C,
+                    0x09,
+                    0x01,
+                    0xA1,
+                    0x01,
+                    0x85,
+                    0x07,
+                    0x09,
+                    0xB5,
+                    0x75,
+                    0x01,
+                    0x95,
+                    0x01,
+                    0x81,
+                    0x02,
+                    0xC0,
+                ]
+            ),
+        )
+        data = bytes([0x07, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00])
+        ids = report_ids(data, desc, None)
+        self.assertFalse(any(item.startswith("favorites_") for item in ids))
+        self.assertTrue(any(item.startswith("046d:c52b:") for item in ids))
+
 
 class SkipInterfaceTests(unittest.TestCase):
     def test_keyboard_only_is_skipped(self) -> None:

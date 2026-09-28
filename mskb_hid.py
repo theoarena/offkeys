@@ -5,8 +5,9 @@
 # discovery, and the virtual uinput keyboard.
 # hidraw_devices lists every node. The caller chooses vid:pid and leaves
 # boot keyboard and mouse interfaces closed.
-# The 2000 names stay first so bindings already learned from that decoder
-# keep winning. The walk covers keys that decoder does not know.
+# The 2000 names stay first on 045e:0745 so bindings already learned
+# from that decoder keep winning. Other products get generic usage ids
+# only; decode_report is that keyboard's layout, not a shared HID dialect.
 # Stays free of config.json and systemd so probe/status can import it
 # without pulling GUI or install paths.
 #
@@ -581,18 +582,21 @@ def _pressed_ids(
     return found
 
 
-# ponytail: one id list per report (no chords as a single binding), and a descriptor this walk cannot read falls back to decode_report only.
+# ponytail: one id list per report (no chords as a single binding), and a descriptor this walk cannot read falls back to decode_report only on the 2000.
 def report_ids(data: bytes, descriptor: HidDescriptor, previous: bytes | None) -> list[str]:
     """Name keys that changed against the caller's baseline, 2000 ids first.
 
     `previous` is the baseline the caller already handled, not a frame this
     function remembers. A 1-bit that was already 1 there stays out, so a
-    sticky vendor bit is not learned as a new key. When the descriptor cannot
-    be walked, the Wireless Keyboard 2000 ids are still returned.
+    sticky vendor bit is not learned as a new key. decode_report is the
+    Wireless Keyboard 2000 layout; another vid:pid must not inherit
+    favorites_* names from a coincidental report 0x07.
     @tags: #action/parse #model/hid
     """
     walk = _parse_descriptor(descriptor.raw)
     generic = [] if walk is None else _pressed_ids(data, descriptor.device, walk, previous)
+    if descriptor.device != "045e:0745":
+        return generic
     parsed = decode_report(data)
     if parsed is None:
         return generic

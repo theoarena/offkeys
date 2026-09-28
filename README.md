@@ -10,7 +10,7 @@ On Linux, some extra keys never reach the desktop. **Microsoft Keyboard** assign
 
 Typing and the pointer are not mapped here.
 
-Open it from your app grid. Choose the keyboard, pick a key, choose what it should do, and apply. The key works immediately and after the next login.
+Open it from your app grid. Choose the keyboard, pick a key for that keyboard, choose what it should do, and apply. The key works immediately and after the next login.
 
 ## Who it's for
 
@@ -20,7 +20,7 @@ You use a keyboard on a Linux desktop, such as GNOME or Zorin, and you want an e
 
 The window is titled **Microsoft Keyboard**.
 
-1. Choose the keyboard.
+1. Choose the keyboard. The keys on the screen belong to that keyboard. A keyboard you have not set up yet starts with none, unless it is the Wireless Keyboard 2000 (My Favorites are already there).
 2. Pick a listed key, or add one by pressing it.
 3. Choose **Open app**, **System shortcut**, **Command**, or **Nothing**.
 4. Select **Apply**.

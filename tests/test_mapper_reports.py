@@ -124,6 +124,39 @@ class MapperReportTests(unittest.TestCase):
         self.assertEqual(active[("input2", 7)], {BINDING_ID: "F13"})
         self.assertEqual(uinput.events, [(183, True)])
 
+    def test_unmatched_favorite_does_not_emit(self) -> None:
+        uinput = _FakeUinput()
+        active: dict = {}
+        _handle_report(("input2", 7), ["favorites_1"], {}, KEY_TABLE, uinput, active, set())
+        self.assertEqual(uinput.events, [])
+        self.assertEqual(active, {})
+        self.run_exec.assert_not_called()
+
+    def test_slice_does_not_fire_other_device_id(self) -> None:
+        logitech = {"046d:c52b:000c:0182": {"key": "F13", "exec": ""}}
+        uinput = _FakeUinput()
+        active: dict = {}
+        _handle_report(
+            ("/dev/hidraw1", 7),
+            ["favorites_1"],
+            logitech,
+            KEY_TABLE,
+            uinput,
+            active,
+            set(),
+        )
+        self.assertEqual(uinput.events, [])
+        _handle_report(
+            ("/dev/hidraw1", 1),
+            ["046d:c52b:000c:0182"],
+            logitech,
+            KEY_TABLE,
+            uinput,
+            active,
+            set(),
+        )
+        self.assertEqual(uinput.events, [(183, True)])
+
 
 if __name__ == "__main__":
     unittest.main()

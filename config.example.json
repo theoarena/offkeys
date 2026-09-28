@@ -1,12 +1,14 @@
 {
-  "_comment": "Match ids printed by `python3 mskb.py probe`. `key` is emitted via uinput (bind it in Zorin Settings → Keyboard). `exec` runs on key press. Empty string disables that action.",
+  "_comment": "Match ids printed by `python3 mskb.py probe`. `key` is emitted via uinput (bind it in Zorin Settings → Keyboard). `exec` runs on key press. Empty string disables that action. Bindings are nested by vid:pid.",
   "devices": ["045e:0745"],
   "bindings": {
-    "favorites_1": { "key": "F14", "exec": "" },
-    "favorites_2": { "key": "F15", "exec": "" },
-    "favorites_3": { "key": "F16", "exec": "" },
-    "favorites_4": { "key": "F17", "exec": "" },
-    "favorites_5": { "key": "F18", "exec": "" },
-    "favorites_star": { "key": "F13", "exec": "" }
+    "045e:0745": {
+      "favorites_1": { "key": "F14", "exec": "" },
+      "favorites_2": { "key": "F15", "exec": "" },
+      "favorites_3": { "key": "F16", "exec": "" },
+      "favorites_4": { "key": "F17", "exec": "" },
+      "favorites_5": { "key": "F18", "exec": "" },
+      "favorites_star": { "key": "F13", "exec": "" }
+    }
   }
 }

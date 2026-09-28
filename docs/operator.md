@@ -62,7 +62,8 @@ Unknown extra key:
 python3 mskb.py learn some_name
 ```
 
-`learn some_name` still writes the config.
+`learn some_name` still writes the config, under the `vid:pid` of the
+hidraw that produced the press.
 
 Report `0x21` on the 2000 is status, not a key. `probe -v` prints that
 report; it is not a binding id.
@@ -73,7 +74,8 @@ desktop settings, not here.
 ## 3. Assign shortcuts
 
 `devices` in `~/.config/mskb/config.json` is the list of `vid:pid` the
-mapper opens. Absent means `045e:0745`.
+mapper opens. Absent means `045e:0745`. `bindings` is nested by that same
+id: a press on one hidraw only matches keys stored under its `vid:pid`.
 
 The default way to assign keys is the GTK window:
 
@@ -88,8 +90,10 @@ sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
 Choose the keyboard, pick a listed key or add one by pressing it, choose
-Open app, System shortcut, Command, or Nothing, then **Apply**. Apply in
-the GUI replaces the bindings map (removed keys stay removed) and restarts
+Open app, System shortcut, Command, or Nothing, then **Apply**. Cards are
+only the keys for the selected keyboard. Apply in the GUI replaces the
+nested bindings maps (removed keys stay removed on that device; other
+keyboards keep theirs) and restarts
 `mskb.service` (`systemctl --user restart`, or `enable --now` if the unit
 was inactive) so the binding works immediately. The header **Restart
 Mapper** button reloads without saving. Apply also removes any GNOME
@@ -105,14 +109,19 @@ the mapper afterwards (section 4).
 
 ```json
 {
-  "devices": ["045e:0745"],
+  "devices": ["045e:0745", "046d:c52b"],
   "bindings": {
-    "favorites_1": { "key": "", "exec": "/usr/bin/flatpak run md.obsidian.Obsidian" },
-    "favorites_2": { "key": "F15", "exec": "" },
-    "favorites_3": { "key": "F16", "exec": "" },
-    "favorites_4": { "key": "F17", "exec": "" },
-    "favorites_5": { "key": "F18", "exec": "" },
-    "favorites_star": { "key": "F13", "exec": "" }
+    "045e:0745": {
+      "favorites_1": { "key": "", "exec": "/usr/bin/flatpak run md.obsidian.Obsidian" },
+      "favorites_2": { "key": "F15", "exec": "" },
+      "favorites_3": { "key": "F16", "exec": "" },
+      "favorites_4": { "key": "F17", "exec": "" },
+      "favorites_5": { "key": "F18", "exec": "" },
+      "favorites_star": { "key": "F13", "exec": "" }
+    },
+    "046d:c52b": {
+      "046d:c52b:000c:0182": { "key": "F13", "exec": "" }
+    }
   }
 }
 ```
@@ -120,6 +129,7 @@ the mapper afterwards (section 4).
 | Field | Meaning |
 | --- | --- |
 | `devices` | `vid:pid` values the mapper, `probe`, and `learn` open. Absent means `045e:0745`. |
+| `bindings` | Map of `vid:pid` to that keyboard's key ids. A flat file from before this nest is migrated on load. Empty `bindings` stay empty: factory Favorites are not re-inserted on load. |
 | `key` | Virtual key via uinput. Record it in Zorin Settings → Keyboard → Shortcuts. Empty string = do not emit. |
 | `exec` | Shell command on press. Empty string = do not run a command. |
 | `label` | Optional title shown on the key card. Empty or absent uses the favorite name or the raw id. The mapper ignores it; the object key stays the HID id. |

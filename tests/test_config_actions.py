@@ -97,7 +97,7 @@ class BindingLabelTests(unittest.TestCase):
             mskb.save_config(path, payload, replace_bindings=True)
             data = json.loads(path.read_text())
             self.assertEqual(
-                data["bindings"]["consumer_0x0223"],
+                data["bindings"]["045e:0745"]["consumer_0x0223"],
                 {"key": "", "exec": "", "label": "Home"},
             )
 
@@ -167,16 +167,14 @@ class SaveConfigTests(unittest.TestCase):
                 },
             )
             data = json.loads(path.read_text())
+            bucket = data["bindings"]["045e:0745"]
             self.assertEqual(data["_comment"], "keep me")
             self.assertEqual(
-                data["bindings"]["favorites_1"],
+                bucket["favorites_1"],
                 {"key": "", "exec": "/usr/bin/true"},
             )
-            self.assertEqual(
-                data["bindings"]["chat"],
-                {"key": "CHAT", "exec": ""},
-            )
-            self.assertEqual(data["bindings"]["favorites_star"]["key"], "F13")
+            self.assertEqual(bucket["chat"], {"key": "CHAT", "exec": ""})
+            self.assertEqual(bucket["favorites_star"]["key"], "F13")
 
     def test_atomic_json_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,9 +187,13 @@ class SaveConfigTests(unittest.TestCase):
             written = mskb.save_config(path, payload)
             self.assertFalse(path.with_name("config.json.tmp").exists())
             on_disk = json.loads(path.read_text())
-            self.assertEqual(on_disk["bindings"]["favorites_1"], payload["bindings"]["favorites_1"])
-            self.assertEqual(written["bindings"]["favorites_1"], payload["bindings"]["favorites_1"])
-            self.assertIn("favorites_star", on_disk["bindings"])
+            bucket = on_disk["bindings"]["045e:0745"]
+            self.assertEqual(bucket["favorites_1"], payload["bindings"]["favorites_1"])
+            self.assertEqual(
+                written["bindings"]["045e:0745"]["favorites_1"],
+                payload["bindings"]["favorites_1"],
+            )
+            self.assertIn("favorites_star", bucket)
 
     def test_replace_bindings_drops_omitted_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,10 +214,10 @@ class SaveConfigTests(unittest.TestCase):
             data = json.loads(path.read_text())
             self.assertEqual(
                 data["bindings"],
-                {"favorites_1": {"key": "F14", "exec": ""}},
+                {"045e:0745": {"favorites_1": {"key": "F14", "exec": ""}}},
             )
-            self.assertNotIn("chat", data["bindings"])
-            self.assertNotIn("favorites_star", data["bindings"])
+            self.assertNotIn("chat", data["bindings"]["045e:0745"])
+            self.assertNotIn("favorites_star", data["bindings"]["045e:0745"])
 
     def test_same_payload_without_replace_keeps_chat(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -234,12 +236,10 @@ class SaveConfigTests(unittest.TestCase):
             payload = {"bindings": {"favorites_1": {"key": "F14", "exec": ""}}}
             mskb.save_config(path, payload)
             data = json.loads(path.read_text())
-            self.assertEqual(data["bindings"]["chat"], {"key": "CHAT", "exec": ""})
-            self.assertIn("favorites_star", data["bindings"])
-            self.assertEqual(
-                data["bindings"]["favorites_1"],
-                {"key": "F14", "exec": ""},
-            )
+            bucket = data["bindings"]["045e:0745"]
+            self.assertEqual(bucket["chat"], {"key": "CHAT", "exec": ""})
+            self.assertIn("favorites_star", bucket)
+            self.assertEqual(bucket["favorites_1"], {"key": "F14", "exec": ""})
 
     def test_replace_on_new_file_omits_default_favorites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -252,12 +252,168 @@ class SaveConfigTests(unittest.TestCase):
             data = json.loads(path.read_text())
             self.assertEqual(
                 data["bindings"],
-                {"favorites_1": {"key": "F14", "exec": ""}},
+                {"045e:0745": {"favorites_1": {"key": "F14", "exec": ""}}},
             )
-            self.assertNotIn("favorites_star", data["bindings"])
+            self.assertNotIn("favorites_star", data["bindings"]["045e:0745"])
+
+
+class NestedBindingsTests(unittest.TestCase):
+    def test_flat_2000_migrates_under_keyboard_2000(self) -> None:
+        maps = mskb.nested_bindings(
+            {
+                "devices": ["045e:0745"],
+                "bindings": {
+                    "favorites_1": {"key": "F14", "exec": ""},
+                    "favorites_star": {"key": "F13", "exec": ""},
+                },
+            }
+        )
+        self.assertEqual(
+            maps["045e:0745"]["favorites_1"],
+            {"key": "F14", "exec": ""},
+        )
+        self.assertEqual(maps["045e:0745"]["favorites_star"]["key"], "F13")
+        self.assertEqual(list(maps), ["045e:0745"])
+
+    def test_generic_id_migrates_under_its_vidpid(self) -> None:
+        maps = mskb.nested_bindings(
+            {
+                "devices": ["046d:c52b"],
+                "bindings": {
+                    "046d:c52b:000c:0182": {"key": "F13", "exec": ""},
+                },
+            }
+        )
+        self.assertEqual(
+            maps["046d:c52b"]["046d:c52b:000c:0182"],
+            {"key": "F13", "exec": ""},
+        )
+        self.assertNotIn("045e:0745", maps)
+
+    def test_nested_file_round_trips(self) -> None:
+        payload = {
+            "devices": ["045e:0745", "046d:c52b"],
+            "bindings": {
+                "045e:0745": {"favorites_1": {"key": "F14", "exec": ""}},
+                "046d:c52b": {"046d:c52b:000c:0182": {"key": "F13", "exec": ""}},
+            },
+        }
+        self.assertEqual(mskb.nested_bindings(payload), payload["bindings"])
+
+    def test_load_empty_bindings_stays_empty_until_ensure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps({"devices": ["045e:0745"], "bindings": {}}) + "\n"
+            )
+            data = mskb.load_config(path)
+            self.assertEqual(data["bindings"], {})
+            original = dict(data["bindings"])
+            mskb.ensure_device_map(data["bindings"], "045e:0745")
+            self.assertIn("favorites_star", data["bindings"]["045e:0745"])
+            self.assertNotEqual(data["bindings"], original)
+
+    def test_load_does_not_inject_favorites_into_empty_logitech(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "devices": ["046d:c52b"],
+                        "bindings": {"046d:c52b": {}},
+                    }
+                )
+                + "\n"
+            )
+            data = mskb.load_config(path)
+            self.assertEqual(data["bindings"], {"046d:c52b": {}})
+            self.assertNotIn("045e:0745", data["bindings"])
+
+    def test_ensure_device_map_seeds_2000_once(self) -> None:
+        maps: dict = {}
+        first = mskb.ensure_device_map(maps, "045e:0745")
+        self.assertIn("favorites_star", first)
+        first.clear()
+        again = mskb.ensure_device_map(maps, "045e:0745")
+        self.assertEqual(again, {})
+        self.assertIs(again, maps["045e:0745"])
+
+    def test_ensure_device_map_other_keyboard_starts_empty(self) -> None:
+        maps: dict = {}
+        bucket = mskb.ensure_device_map(maps, "046d:c52b")
+        self.assertEqual(bucket, {})
+        self.assertNotIn("favorites_1", bucket)
+
+    def test_bindings_for_device_missing_is_empty(self) -> None:
+        self.assertEqual(mskb.bindings_for_device({}, "046d:c52b"), {})
+
+    def test_bindings_for_device_isolates_slices(self) -> None:
+        maps = {
+            "045e:0745": {"favorites_1": {"key": "F14", "exec": ""}},
+            "046d:c52b": {},
+        }
+        self.assertEqual(mskb.bindings_for_device(maps, "046d:c52b"), {})
+        self.assertIn("favorites_1", mskb.bindings_for_device(maps, "045e:0745"))
+
+    def test_merge_stays_in_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "devices": ["045e:0745", "046d:c52b"],
+                        "bindings": {
+                            "045e:0745": {"favorites_1": {"key": "F14", "exec": ""}},
+                            "046d:c52b": {
+                                "046d:c52b:000c:0182": {"key": "F13", "exec": ""}
+                            },
+                        },
+                    }
+                )
+                + "\n"
+            )
+            mskb.save_config(
+                path,
+                {
+                    "bindings": {
+                        "045e:0745": {"favorites_1": {"key": "F15", "exec": ""}},
+                    }
+                },
+            )
+            data = json.loads(path.read_text())
+            self.assertEqual(
+                data["bindings"]["045e:0745"]["favorites_1"]["key"],
+                "F15",
+            )
+            self.assertEqual(
+                data["bindings"]["046d:c52b"]["046d:c52b:000c:0182"]["key"],
+                "F13",
+            )
+
+    def test_put_learned_binding_writes_captured_device(self) -> None:
+        config: dict = {
+            "devices": ["045e:0745"],
+            "bindings": {"045e:0745": {"favorites_1": {"key": "F14", "exec": ""}}},
+        }
+        mskb.put_learned_binding(
+            config,
+            "046d:c52b",
+            "home",
+            "046d:c52b:000c:0182",
+            {"key": "", "exec": ""},
+        )
+        self.assertIn("046d:c52b", config["devices"])
+        logitech = config["bindings"]["046d:c52b"]
+        self.assertEqual(logitech["home"], {"key": "", "exec": ""})
+        self.assertEqual(logitech["046d:c52b:000c:0182"], {"key": "", "exec": ""})
+        self.assertEqual(
+            config["bindings"]["045e:0745"]["favorites_1"]["key"],
+            "F14",
+        )
 
 
 class DevicesFromConfigTests(unittest.TestCase):
+
     def test_missing_or_empty_uses_microsoft_default(self) -> None:
         self.assertEqual(mskb_bindings.devices_from_config({}), ["045e:0745"])
         self.assertEqual(

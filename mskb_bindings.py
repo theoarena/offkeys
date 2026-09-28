@@ -1,9 +1,11 @@
 # mskb_bindings.py
 #
 # config.json load/save and GUI exclusive-mode helpers.
-# The mapper still dual-fires when both key and exec are set; this
-# module only projects that contract for the favorites window. An optional
-# `label` is a display title and is not part of that pair.
+# Bindings are nested by vid:pid so two keyboards do not share a map.
+# A flat file from before that nest is migrated on load. The mapper still
+# dual-fires when both key and exec are set; this module only projects
+# that contract for the favorites window. An optional `label` is a display
+# title and is not part of that pair.
 #
 # Used by: mskb_gui.py (via mskb), mskb_mapper.py, mskb_install.py
 # See also: mskb_paths.py
@@ -15,19 +17,32 @@ from pathlib import Path
 
 from mskb_paths import REPO_ROOT, _chown_user, config_path
 
+"""Default vid:pid for the Wireless Keyboard 2000.
+@tags: #format/string #model/config #model/hid #type/constant
+"""
+KEYBOARD_2000 = "045e:0745"
+"""Factory favorite bindings seeded only for KEYBOARD_2000.
+@tags: #model/binding #model/config #model/favorite #type/constant
+"""
+DEFAULT_2000_BINDINGS = {
+    "favorites_1": {"key": "F14", "exec": ""},
+    "favorites_2": {"key": "F15", "exec": ""},
+    "favorites_3": {"key": "F16", "exec": ""},
+    "favorites_4": {"key": "F17", "exec": ""},
+    "favorites_5": {"key": "F18", "exec": ""},
+    "favorites_star": {"key": "F13", "exec": ""},
+}
 DEFAULT_CONFIG = {
     "_comment": (
         "Match keys from `mskb.py probe`. `key` is emitted via uinput "
         "(bind it in Zorin Settings → Keyboard). `exec` runs on press."
     ),
-    "devices": ["045e:0745"],
+    "devices": [KEYBOARD_2000],
     "bindings": {
-        "favorites_1": {"key": "F14", "exec": ""},
-        "favorites_2": {"key": "F15", "exec": ""},
-        "favorites_3": {"key": "F16", "exec": ""},
-        "favorites_4": {"key": "F17", "exec": ""},
-        "favorites_5": {"key": "F18", "exec": ""},
-        "favorites_star": {"key": "F13", "exec": ""},
+        KEYBOARD_2000: {
+            key_id: dict(binding)
+            for key_id, binding in DEFAULT_2000_BINDINGS.items()
+        },
     },
 }
 
@@ -81,14 +96,175 @@ def devices_from_config(config: dict) -> list[str]:
     return [str(item) for item in DEFAULT_CONFIG["devices"]]
 
 
+def is_binding_entry(value: object) -> bool:
+    """True when a dict is one key/exec binding, not a per-device map.
+
+    Nested config stores maps under vid:pid. A value with `key` or `exec`
+    is the old flat shape (or one binding inside a device map).
+    @tags: #action/normalize #model/binding #model/config #type/helper
+    """
+    return isinstance(value, dict) and ("key" in value or "exec" in value)
+
+
+def _vidpid_prefix(key_id: str) -> str:
+    """Leading vid:pid on a generic learned id, or empty.
+
+    `046d:c52b:000c:0182` names its product. `favorites_1` does not.
+    """
+    parts = str(key_id).strip().lower().split(":")
+    if len(parts) < 2 or any(len(part) != 4 for part in parts[:2]):
+        return ""
+    try:
+        int(parts[0], 16)
+        int(parts[1], 16)
+    except ValueError:
+        return ""
+    return f"{parts[0]}:{parts[1]}"
+
+
+def _device_for_flat_id(key_id: str, devices: list[str]) -> str:
+    """Which product owns a flat binding id while migrating old files.
+
+    Prefixed generic ids stay on that product. Unprefixed 2000 names
+    (`favorites_*`, `chat`) go to KEYBOARD_2000 when that device is listed,
+    else to the only listed device, else KEYBOARD_2000.
+    @tags: #action/normalize #model/binding #model/config #model/hid #type/helper
+    """
+    prefix = _vidpid_prefix(key_id)
+    if prefix:
+        return prefix
+    if KEYBOARD_2000 in devices:
+        return KEYBOARD_2000
+    if len(devices) == 1:
+        return devices[0]
+    return KEYBOARD_2000
+
+
+def nested_bindings(config: dict) -> dict[str, dict[str, dict]]:
+    """Normalize `bindings` to `{vid:pid: {key_id: binding}}`.
+
+    A flat map (today's files) is split into device buckets. A nested map
+    is copied with lowercase device keys. Empty stays empty: this must not
+    seed Wireless Keyboard 2000 favorites into a Logitech file.
+    @tags: #action/normalize #model/binding #model/config #type/helper
+    """
+    raw = config.get("bindings")
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    if any(is_binding_entry(value) for value in raw.values()):
+        devices = devices_from_config(config)
+        maps: dict[str, dict[str, dict]] = {}
+        for key_id, value in raw.items():
+            if not is_binding_entry(value):
+                continue
+            vidpid = _device_for_flat_id(str(key_id), devices)
+            maps.setdefault(vidpid, {})[str(key_id)] = dict(value)
+        return maps
+    maps = {}
+    for vidpid, bucket in raw.items():
+        key = str(vidpid).strip().lower()
+        if not key or not isinstance(bucket, dict):
+            continue
+        maps[key] = {
+            str(kid): dict(bind) if isinstance(bind, dict) else {"key": "", "exec": ""}
+            for kid, bind in bucket.items()
+        }
+    return maps
+
+
+def bindings_for_device(maps: dict, vidpid: str) -> dict:
+    """Slice of nested bindings for one product, or empty.
+
+    A missing device is not seeded. An empty stored map is returned as-is
+    so the GUI can keep a wiped 2000 slot empty.
+    @tags: #action/normalize #model/binding #model/config #type/helper
+    """
+    bucket = maps.get(str(vidpid).strip().lower())
+    if bucket is None:
+        return {}
+    return bucket
+
+
+def ensure_device_map(maps: dict, vidpid: str) -> dict:
+    """Return the device bucket, creating it when the slot is new.
+
+    KEYBOARD_2000 gets the factory Favorites only the first time the slot
+    appears. An existing empty map stays empty so Remove+Apply sticks.
+    ponytail: identity is product vid:pid, not USB serial. Two identical
+    2000 dongles share one map; key by phys/serial if that is ever required.
+    @tags: #action/normalize #model/binding #model/config #side-effect/mutation #type/helper
+    """
+    key = str(vidpid).strip().lower()
+    if key in maps:
+        return maps[key]
+    if key == KEYBOARD_2000:
+        maps[key] = {
+            kid: dict(bind) for kid, bind in DEFAULT_2000_BINDINGS.items()
+        }
+    else:
+        maps[key] = {}
+    return maps[key]
+
+
+def put_learned_binding(
+    config: dict,
+    vidpid: str,
+    target: str,
+    primary: str,
+    binding: dict,
+) -> dict:
+    """Write a learned id into that hidraw's bucket and list the device.
+
+    `learn` captures one press. The human name and the raw primary id both
+    live on the product that produced the report, not on a global map.
+    @tags: #action/save #model/binding #model/config #side-effect/mutation #type/helper
+    """
+    maps = nested_bindings(config)
+    bucket = ensure_device_map(maps, vidpid)
+    stored = dict(binding)
+    bucket[target] = stored
+    if primary != target:
+        bucket[primary] = {
+            "key": stored.get("key", ""),
+            "exec": stored.get("exec", ""),
+        }
+    config["bindings"] = maps
+    devices = devices_from_config(config)
+    key = str(vidpid).strip().lower()
+    if key not in devices:
+        devices = list(devices)
+        devices.append(key)
+    config["devices"] = devices
+    return config
+
+
+def _copy_nested_maps(maps: dict) -> dict:
+    return {
+        vid: {kid: dict(bind) for kid, bind in bucket.items()}
+        for vid, bucket in maps.items()
+    }
+
+
+def _default_document() -> dict:
+    return {
+        "_comment": DEFAULT_CONFIG["_comment"],
+        "devices": list(DEFAULT_CONFIG["devices"]),
+        "bindings": _copy_nested_maps(DEFAULT_CONFIG["bindings"]),
+    }
+
+
 def load_config(path: Path) -> dict:
+    """Read config and nest bindings. Do not overlay factory Favorites.
+
+    Merging DEFAULT_CONFIG bindings into every file put 2000 keys onto a
+    Logitech map in mapper memory. Missing file still returns the 2000 seed.
+    @tags: #action/normalize #model/binding #model/config #side-effect/file #type/helper
+    """
     if not path.exists():
-        return DEFAULT_CONFIG
+        return _default_document()
     with path.open() as fh:
         data = json.load(fh)
-    bindings = dict(DEFAULT_CONFIG["bindings"])
-    bindings.update(data.get("bindings", {}))
-    data["bindings"] = bindings
+    data["bindings"] = nested_bindings(data)
     return data
 
 
@@ -190,7 +366,7 @@ def shortcut_key_choices(current: str = "") -> list[str]:
     """F13–F24 for the shortcut combo, plus a non-standard current value.
 
     Leaving an unknown name in the list keeps it selectable until the user
-    picks a listed F-key. Apply then stores that choice instead.
+    picks a listed F-key. Apply then stores that choice instead of dropping it.
     @tags: #model/shortcut #model/config #subject/form #type/helper
     """
     keys = list(SYSTEM_SHORTCUT_KEYS)
@@ -203,34 +379,33 @@ def shortcut_key_choices(current: str = "") -> list[str]:
 def save_config(path: Path, config: dict, *, replace_bindings: bool = False) -> dict:
     """Atomically merge and write config so a crash cannot truncate the file.
 
-    Bindings are merged by default: a favorite-only GUI save keeps ids that
-    `learn` added. The favorites window can also delete a key; without
-    `replace_bindings` that merge kept the removed id forever. Set the flag
-    so the written map is exactly the payload bindings. Other top-level keys
-    on disk are kept unless `config` sets them. A new file still starts from
-    DEFAULT_CONFIG, but the flag drops seeded favorites the payload left out.
-    Returns the merged document that was written.
-    @tags: #action/save #action/merge #model/config #side-effect/file #side-effect/mutation
+    Bindings are nested by vid:pid. Default merge updates keys inside each
+    device bucket so `learn` cannot wipe the other keyboard. `replace_bindings`
+    writes the nested tree as given so the GUI can delete a key. Flat payloads
+    are nested before write. Other top-level keys on disk are kept unless
+    `config` sets them. Returns the merged document that was written.
+    @tags: #action/save #action/merge #model/binding #model/config #side-effect/file #side-effect/mutation
     """
     if path.exists():
         existing = load_config(path)
     else:
-        existing = {
-            "_comment": DEFAULT_CONFIG["_comment"],
-            "devices": list(DEFAULT_CONFIG["devices"]),
-            "bindings": dict(DEFAULT_CONFIG["bindings"]),
-        }
+        existing = _default_document()
     merged = dict(existing)
     for key, value in config.items():
         if key == "bindings":
             continue
         merged[key] = value
+    incoming_cfg = dict(merged)
+    incoming_cfg["bindings"] = config.get("bindings") or {}
+    incoming = nested_bindings(incoming_cfg)
     if replace_bindings:
-        merged["bindings"] = dict(config.get("bindings") or {})
+        merged["bindings"] = incoming
     else:
-        bindings = dict(existing.get("bindings") or {})
-        bindings.update(config.get("bindings") or {})
-        merged["bindings"] = bindings
+        result = _copy_nested_maps(existing.get("bindings") or {})
+        for vidpid, bucket in incoming.items():
+            dest = result.setdefault(vidpid, {})
+            dest.update({kid: dict(bind) for kid, bind in bucket.items()})
+        merged["bindings"] = result
     path.parent.mkdir(parents=True, exist_ok=True)
     _chown_user(path.parent)
     tmp = path.with_name(path.name + ".tmp")

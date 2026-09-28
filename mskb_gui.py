@@ -4,19 +4,19 @@
 # Writes the same config.json the mapper reads, then restarts the user unit.
 # Lives in a separate module so `probe`/`run` never import GI.
 #
-# The key cards are every binding in the file. Apply replaces that map so a
-# removed id stays gone. Add key learns from the keyboard chosen in the combo.
-# An optional label is only the card title; the dict key stays the id the
-# mapper matches. The id is the second line only when that title is set.
+# The key cards are the bindings for the keyboard chosen in the combo.
+# Apply replaces the nested maps so a removed id stays gone on that
+# device, and the other keyboards keep theirs. Add key learns from the
+# selected hidraw. An optional label is only the card title; the dict
+# key stays the id the mapper matches. The id is the second line only
+# when that title is set.
 #
 # ComboRows stay siblings in one PreferencesGroup (shown/hidden) because a
 # ComboRow is a ListBoxRow and cannot live inside a Stack that is also a row.
 
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
 
 import gi
 
@@ -79,6 +79,13 @@ def _copy_bindings(bindings: dict[str, dict]) -> dict[str, dict]:
     return {key: dict(value) for key, value in bindings.items()}
 
 
+def _copy_maps(maps: dict[str, dict[str, dict]]) -> dict[str, dict[str, dict]]:
+    """Copy every device bucket so Apply dirty-state does not alias working maps.
+    @tags: #model/binding #model/config #type/helper
+    """
+    return {vidpid: _copy_bindings(bucket) for vidpid, bucket in maps.items()}
+
+
 def _as_binding(value: object) -> dict[str, str]:
     """Project one config entry onto the key/exec pair the form edits.
 
@@ -98,23 +105,6 @@ def _as_binding(value: object) -> dict[str, str]:
             binding["label"] = label
         return binding
     return {"key": "", "exec": ""}
-
-
-def _stored_bindings(path: Path) -> dict[str, dict[str, str]]:
-    """Bindings written in the file, not the favorites load_config merges in.
-
-    An empty or missing map stays empty. Filling the six defaults here would
-    show keys Apply had already removed.
-    @tags: #model/binding #model/config #type/helper
-    """
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {}
-    raw = data.get("bindings") if isinstance(data, dict) else None
-    if not isinstance(raw, dict) or not raw:
-        return {}
-    return {str(key_id): _as_binding(value) for key_id, value in raw.items()}
 
 
 def _keyboard_choices(saved: list[str], nodes: list) -> list[tuple[str, str]]:
@@ -175,7 +165,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
 
     def __init__(self, app: Adw.Application) -> None:
         """Build the keyboard picker, key cards, and action form.
-        @tags: #model/config #scope/gui #subject/form #type/window
+        @tags: #model/binding #model/config #model/hid #scope/gui #subject/form #type/window
         """
         super().__init__(application=app, title="Microsoft Keyboard")
         self.set_default_size(560, 640)
@@ -191,9 +181,13 @@ class FavoritesWindow(Adw.ApplicationWindow):
         loaded = mskb.load_config(self.config_path)
         self.devices = list(mskb.devices_from_config(loaded))
         self.original_devices = list(self.devices)
-        self.working = _stored_bindings(self.config_path)
-        self.original = _copy_bindings(self.working)
-        self.current_id = next(iter(self.working), None)
+        self.maps = {
+            vid: {kid: _as_binding(bind) for kid, bind in bucket.items()}
+            for vid, bucket in (loaded.get("bindings") or {}).items()
+        }
+        self.original_maps = _copy_maps(self.maps)
+        self.working: dict[str, dict] = {}
+        self.current_id = None
         self.apps = _installed_apps()
         self._app_commands = [command for _, command in self.apps]
         self._key_choices = list(mskb.SYSTEM_SHORTCUT_KEYS)
@@ -245,6 +239,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
         inner.append(self._build_keyboard())
         inner.append(self._build_keys())
         inner.append(self._build_form())
+        self._sync_working_from_keyboard()
         self._rebuild_keys()
         self.connect("close-request", self._on_close_request)
 
@@ -516,9 +511,26 @@ class FavoritesWindow(Adw.ApplicationWindow):
             [Gtk.AccessibleProperty.DESCRIPTION], [text]
         )
 
+    def _sync_working_from_keyboard(self) -> None:
+        """Point working at the selected device's bucket, seeding 2000 once.
+
+        A missing 2000 slot is created here, after original_maps was snapshotted
+        from disk, so Apply stays on until that seed is saved. An explicit
+        empty bucket is left empty.
+        @tags: #model/binding #model/hid #side-effect/mutation #subject/form #type/window
+        """
+        vidpid = self._selected_keyboard()
+        if not vidpid:
+            self.working = {}
+            return
+        self.working = mskb.ensure_device_map(self.maps, vidpid)
+
     def _on_keyboard_selected(self, *_args) -> None:
-        """Append a newly chosen vid:pid so Apply opens that keyboard.
-        @tags: #model/hid #side-effect/mutation #subject/form #type/window
+        """Switch the visible map to the chosen vid:pid, and list it for Apply.
+
+        Appends a newly chosen receiver so the mapper opens it. Already-saved
+        devices still swap cards; skipping that left Favorites on a Logitech.
+        @tags: #model/binding #model/hid #side-effect/mutation #subject/form #type/window
         """
         if self._syncing:
             return
@@ -526,10 +538,15 @@ class FavoritesWindow(Adw.ApplicationWindow):
         vidpid = self._selected_keyboard()
         if not vidpid:
             return
-        if any(str(item).strip().lower() == vidpid for item in self.devices):
+        self._write_form_to_working()
+        if not any(str(item).strip().lower() == vidpid for item in self.devices):
+            self.devices.append(vidpid)
+        bucket = mskb.ensure_device_map(self.maps, vidpid)
+        if self.working is bucket:
+            self._update_dirty()
             return
-        self.devices.append(vidpid)
-        self._update_dirty()
+        self.working = bucket
+        self._rebuild_keys()
 
     def _on_card_selected(self, flow: Gtk.FlowBox) -> None:
         """Save the form onto the previous id, then load the newly selected one.
@@ -606,7 +623,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
                 # the idle baseline for the reports that actually name keys.
                 if report_id == 0x21:
                     continue
-                source = (dev.iface, report_id)
+                source = (dev.path, report_id)
                 descriptor = mskb.HidDescriptor(
                     device=f"{dev.vid}:{dev.pid}", raw=dev.descriptor
                 )
@@ -811,7 +828,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
         """Enable Apply when the key map or device list differs from the last save.
         @tags: #side-effect/mutation #subject/form #type/window
         """
-        dirty = self.working != self.original or self.devices != self.original_devices
+        dirty = self.maps != self.original_maps or self.devices != self.original_devices
         self.apply_btn.set_sensitive(dirty)
 
     def _toast(self, title: str, timeout: int = 5) -> None:
@@ -846,11 +863,12 @@ class FavoritesWindow(Adw.ApplicationWindow):
         self._reload_mapper(after_save=False)
 
     def _on_apply(self, *_args) -> None:
-        """Replace bindings and devices in config, then restart the mapper.
+        """Replace nested bindings and devices in config, then restart the mapper.
 
-        replace_bindings drops ids removed from the working map. A merge would
-        put those keys back on the next load.
-        @tags: #action/save #model/config #side-effect/file #side-effect/mutation #side-effect/process #subject/form #type/window
+        The payload is every device map, not only the visible slice, so Apply
+        cannot wipe the other keyboard. replace_bindings drops ids removed
+        from a bucket. A merge would put those keys back on the next load.
+        @tags: #action/save #model/binding #model/config #side-effect/file #side-effect/mutation #side-effect/process #subject/form #type/window
         """
         if not self.apply_btn.get_sensitive():
             return
@@ -858,13 +876,13 @@ class FavoritesWindow(Adw.ApplicationWindow):
         try:
             mskb.save_config(
                 self.config_path,
-                {"bindings": dict(self.working), "devices": list(self.devices)},
+                {"bindings": _copy_maps(self.maps), "devices": list(self.devices)},
                 replace_bindings=True,
             )
         except OSError:
             self._toast("Could not save keys.")
             return
-        self.original = _copy_bindings(self.working)
+        self.original_maps = _copy_maps(self.maps)
         self.original_devices = list(self.devices)
         self._update_dirty()
         self._reload_mapper(after_save=True)

@@ -20,14 +20,20 @@ import sys
 from mskb_bindings import (  # noqa: F401
     DEFAULT_CONFIG,
     FAVORITE_IDS,
+    KEYBOARD_2000,
     SYSTEM_SHORTCUT_KEYS,
     binding_for_kind,
     binding_label,
+    bindings_for_device,
     key_card_text,
     devices_from_config,
     ensure_config,
+    ensure_device_map,
+    is_binding_entry,
     kind_for_binding,
     load_config,
+    nested_bindings,
+    put_learned_binding,
     save_config,
     shortcut_key_choices,
     strip_field_codes,
@@ -103,10 +109,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
     """Print press/release from track_report ids, one held key per source.
 
     Report 0x21 is status. It must not count as the release of a key another
-    report id on the same interface is still holding. The first frame of each
+    report id on the same hidraw is still holding. The first frame of each
     source is an idle snapshot, so a key already down at start is silent
     until it is released and pressed.
-    @tags: #subject/cli #type/command #model/hid
+    @tags: #model/config #model/hid #subject/cli #type/command
     """
     config = load_config(ensure_config())
     opened = open_hidraw(devices_from_config(config))
@@ -124,7 +130,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 except BlockingIOError:
                     continue
                 dev = fds[fd]
-                source = (dev.iface, data[0] if data else 0)
+                source = (dev.path, data[0] if data else 0)
                 if source[1] == 0x21:
                     if args.verbose:
                         parsed = decode_report(data)
@@ -159,8 +165,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def cmd_learn(args: argparse.Namespace) -> int:
-    """Capture the next extra key and print the binding id to add to config.
-    @tags: #action/save #model/config #side-effect/mutation #subject/cli #type/command
+    """Capture the next extra key and store it under that hidraw's vid:pid bucket.
+    @tags: #action/save #model/binding #model/config #model/hid #side-effect/file #side-effect/mutation #subject/cli #type/command
     """
     config = load_config(ensure_config())
     opened = open_hidraw(devices_from_config(config))
@@ -169,6 +175,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
     fds = {fd: dev for fd, dev in opened}
     baselines: dict[tuple[str, int], bytes] = {}
     captured = None
+    captured_dev = None
     try:
         while captured is None:
             ready, _, _ = select.select(list(fds), [], [], 1.0)
@@ -178,7 +185,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
                 except BlockingIOError:
                     continue
                 dev = fds[fd]
-                source = (dev.iface, data[0] if data else 0)
+                source = (dev.path, data[0] if data else 0)
                 # Same status report probe ignores. It never names a key to save.
                 if source[1] == 0x21:
                     continue
@@ -188,6 +195,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
                 if not ids:
                     continue
                 captured = ParsedReport(report_id=source[1], raw=data, ids=ids)
+                captured_dev = dev
                 break
     except KeyboardInterrupt:
         print("\nCancelled.")
@@ -197,6 +205,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
             os.close(fd)
 
     assert captured is not None
+    assert captured_dev is not None
     print(format_report(captured))
     primary = primary_id(captured) or captured.ids[0]
     print(f"Suggested config id: {primary}")
@@ -204,14 +213,10 @@ def cmd_learn(args: argparse.Namespace) -> int:
         ensure_config()
         path = config_path()
         config = load_config(path)
-        existing = config["bindings"].get(target, {"key": "", "exec": ""})
-        # Keep the human name the user asked for, and also alias the raw id.
-        config["bindings"][target] = existing
-        if primary != target:
-            config["bindings"][primary] = {
-                "key": existing.get("key", ""),
-                "exec": existing.get("exec", ""),
-            }
+        vidpid = f"{captured_dev.vid}:{captured_dev.pid}"
+        bucket = bindings_for_device(config.get("bindings") or {}, vidpid)
+        existing = bucket.get(target, {"key": "", "exec": ""})
+        put_learned_binding(config, vidpid, target, primary, existing)
         save_config(path, config)
         print(f"Updated {path} with {target} / {primary}")
     return 0

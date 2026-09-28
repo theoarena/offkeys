@@ -1,7 +1,7 @@
 # mskb_mapper.py
 #
 # Runtime loop for `mskb.py run`: read hidraw, emit uinput keys, run exec.
-# Each interface and report id keeps its own baseline and held keys, so
+# Each hidraw path and report id keeps its own baseline and held keys, so
 # one report going idle does not lift a key another report is still sending.
 # Dual-fire when both key and exec are set stays here; the GUI never
 # writes that shape.
@@ -16,9 +16,13 @@ import select
 import subprocess
 from typing import Iterable
 
-from mskb_bindings import devices_from_config, ensure_config, load_config
+from mskb_bindings import (
+    bindings_for_device,
+    devices_from_config,
+    ensure_config,
+    load_config,
+)
 from mskb_hid import (
-    FAVORITE_TO_KEY,
     HidDescriptor,
     UInputKeyboard,
     load_key_table,
@@ -48,9 +52,12 @@ def _binding_for(ids: Iterable[str], bindings: dict) -> tuple[str, dict] | None:
 
 
 def cmd_run(_: object) -> int:
+    """Read hidraw reports and map each device to its nested binding bucket.
+    @tags: #model/binding #model/config #model/hid #side-effect/mutation #type/command
+    """
     path = ensure_config()
     config = load_config(path)
-    bindings = config.get("bindings", {})
+    maps = config.get("bindings", {})
     key_table = load_key_table()
     opened = open_hidraw(devices_from_config(config))
     uinput = UInputKeyboard()
@@ -69,16 +76,17 @@ def cmd_run(_: object) -> int:
                 except BlockingIOError:
                     continue
                 dev = fds[fd]
-                # Report id is part of the key so one interface can hold
-                # several reports without one idle frame lifting the others.
-                source = (dev.iface, data[0] if data else 0)
+                # Path is unique per hidraw node, so two keyboards that share
+                # an interface number do not steal each other's baseline.
+                source = (dev.path, data[0] if data else 0)
                 descriptor = HidDescriptor(device=f"{dev.vid}:{dev.pid}", raw=dev.descriptor)
                 baseline, ids = track_report(baselines.get(source), data, descriptor)
                 baselines[source] = baseline
                 # 0x21 is the Wireless Keyboard 2000 awake bitmap, not a key.
                 if source[1] == 0x21:
                     continue
-                _handle_report(source, ids, bindings, key_table, uinput, active, seen_unbound)
+                slice_ = bindings_for_device(maps, f"{dev.vid}:{dev.pid}")
+                _handle_report(source, ids, slice_, key_table, uinput, active, seen_unbound)
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
@@ -97,7 +105,7 @@ def _release_source(
     source: tuple[str, int],
     keep: str | None = None,
 ) -> None:
-    """Key-up and drop bindings held by one interface and report id.
+    """Key-up and drop bindings held by one hidraw path and report id.
 
     Other sources stay down. A new press passes `keep` so the binding that
     is still the match is not released and then fired again.
@@ -117,27 +125,6 @@ def _release_source(
         active.pop(source, None)
 
 
-def _default_favorite(ids: Iterable[str]) -> tuple[str, dict] | None:
-    """Unconfigured My Favorites still emit F14–F18.
-
-    report_ids puts favorites_N first, ahead of the generic usage id, so a
-    saved binding under that name wins in _binding_for. This only covers the
-    case where the report named a favorite and config has no entry yet.
-    @tags: #action/parse #model/hid
-    """
-    for key_id in ids:
-        if not key_id.startswith("favorites_"):
-            continue
-        suffix = key_id[len("favorites_") :]
-        if not suffix.isdigit():
-            continue
-        fav = int(suffix)
-        key = FAVORITE_TO_KEY.get(fav)
-        if key:
-            return key_id, {"key": key, "exec": ""}
-    return None
-
-
 def _handle_report(
     source: tuple[str, int],
     ids: list[str],
@@ -152,15 +139,13 @@ def _handle_report(
     An empty list means this report went idle, so only `active[source]` goes
     up. A name that stays in the source's map does not fire exec or uinput
     again. A different name on the same source releases the previous one.
-    @tags: #action/parse #model/hid
+    @tags: #action/parse #model/binding #model/hid
     """
     if not ids:
         _release_source(uinput, key_table, active, source)
         return
 
     matched = _binding_for(ids, bindings)
-    if not matched:
-        matched = _default_favorite(ids)
     if not matched:
         token = ",".join(ids)
         if token not in seen_unbound:
