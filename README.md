@@ -10,29 +10,28 @@ On Linux, some extra keys never reach the desktop. **OffKeys** assigns them: ope
 
 Typing and the pointer are not mapped here.
 
-Open it from your app grid. Choose the keyboard, pick a key for that keyboard, choose what it should do, and apply. The key works immediately and after the next login.
+Open it from your app grid. Choose the keyboard, pick a key for that keyboard, choose what it should do, and apply. 
 
-The Microsoft Wireless Keyboard 2000 is the default, with My Favorites already named. Other extra-key devices can be learned; they stay off [Tested devices](#tested-devices) until someone actually tests them.
+The "Microsoft Wireless Keyboard 2000" is the default. Other extra-key devices can be learned; they stay off [Tested devices](#tested-devices) until someone actually tests them.
 
 ## Who it's for
 
-You use a keyboard on a Linux desktop, such as GNOME or Zorin, and you want an extra key to open an app, run a command, or trigger a shortcut.
+You use a keyboard on a Linux desktop and you want an extra key to open an app, run a command, or trigger a shortcut.
 
 ## Use the app
 
-The window is titled **OffKeys**.
+1. Open the app.
+2. Choose your keyboard from the list. The keys on the screen belong to that keyboard. A keyboard you have not set up yet starts with none, unless it is the "Wireless Keyboard 2000" (Default).
+3. Pick a listed key, or add one by pressing it. The window asks you to press the extra key, and **Cancel** stops listening.
+4. Each key shows what it does. Choose **Open app**, **System shortcut**, **Command**, or **Nothing**.
+5. Select **Apply**.
 
-1. Choose the keyboard. The keys on the screen belong to that keyboard. A keyboard you have not set up yet starts with none, unless it is the Wireless Keyboard 2000 (My Favorites are already there).
-2. Pick a listed key, or add one by pressing it. The window asks you to press the extra key, and **Cancel** stops listening.
-3. Each key shows what it does. Choose **Open app**, **System shortcut**, **Command**, or **Nothing**. Application names are the ones already on this computer.
-4. Select **Apply**.
-
-The key works immediately and after the next login. Closing the window with changes you have not applied asks you to keep editing or discard them.
+The key works immediately and in future sessions.
 
 
 | Action          | What you get                                                                                                   |
 | --------------- | -------------------------------------------------------------------------------------------------------------- |
-| Open app        | The key opens an app you already have.                                                                        |
+| Open app        | The key opens an app you choose.                                                                        |
 | System shortcut | The key sends a function key from **F13** to **F24**, so your desktop can record it.                          |
 | Command         | The key runs a command you type.                                                                               |
 | Nothing         | The key stays quiet.                                                                                           |
@@ -40,24 +39,19 @@ The key works immediately and after the next login. Closing the window with chan
 
 **Restart mapper**, in the window menu, reloads your keys without changing what you saved. Use it when a key does not respond.
 
-> [!NOTE]
-> The app starts your keys when you sign in
-
-
-
 ## Install
 
-You do this once. After that, open **OffKeys** from your apps.
+Do this once. After that, open **OffKeys** from your apps.
 
 ```bash
-git clone https://github.com/theoarena/ms-keyboard-linux.git
-cd ms-keyboard-linux
+git clone https://github.com/theoarena/offkeys.git
+cd offkeys
 sudo python3 mskb.py install
 ```
 
 Unplug the keyboard and plug it back in once, so the new hidraw permission applies.
 
-On Ubuntu 24.04 or Zorin 18, install the window toolkit if the app does not open. The window needs libadwaita 1.5:
+On Ubuntu 24.04, install the window toolkit if the app does not open. The window needs libadwaita 1.5:
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
