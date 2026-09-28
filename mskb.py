@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # mskb.py
 #
-# Public entry for Microsoft Wireless Keyboard 2000 extra keys.
-# Domain code lives in sibling modules; this file is the CLI, the
-# `import mskb` facade, and the lazy GUI launch. Do not replace it
-# with a package named mskb — systemd and the .desktop Exec point here.
+# Public CLI entry for OffKeys. Domain code lives in sibling modules;
+# this file is the CLI, the `import mskb` facade, and the lazy GUI launch.
+# Do not replace it with a package named mskb — systemd and the .desktop
+# Exec point here. The window title is OffKeys; this filename stays mskb.
 #
 # Used by: systemd/mskb.service, mskb_gui.py
 # See also: mskb_bindings.py, mskb_hid.py, mskb_mapper.py, mskb_lifecycle.py,
@@ -245,7 +245,7 @@ def cmd_gui(_: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Microsoft Wireless Keyboard 2000 extra-key mapper for Linux"
+        description="OffKeys: bind extra keyboard keys to shortcuts, apps, and commands"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status", help="Show receiver, hidraw permissions, driver").set_defaults(

@@ -33,6 +33,9 @@ def _install_commands() -> list[list[str]]:
 
 
 def _install_user_service() -> None:
+    """Write and enable the user systemd unit (OffKeys unit description).
+    @tags: #action/install #model/desktop #scope/user #side-effect/file #side-effect/mutation #side-effect/process #subject/cli #type/helper
+    """
     inv = sudo_invoker()
     home = Path(inv.pw_dir) if inv else Path.home()
     unit_dir = home / ".config/systemd/user"
@@ -48,7 +51,7 @@ def _install_user_service() -> None:
         "\n".join(
             [
                 "[Unit]",
-                "Description=HID extra-key mapper",
+                "Description=OffKeys extra-key mapper",
                 "After=graphical-session.target",
                 "PartOf=graphical-session.target",
                 "",
@@ -84,8 +87,8 @@ def _install_user_service() -> None:
 
 
 def desktop_path() -> Path:
-    """Path to the user `.desktop` launcher for the GTK favorites GUI.
-    @tags: #format/path #model/desktop #scope/user #type/helper
+    """Path to the user `.desktop` launcher for the OffKeys window.
+    @tags: #format/path #model/desktop #scope/user #subject/desktop #type/helper
     """
     inv = sudo_invoker()
     home = Path(inv.pw_dir) if inv else Path.home()
@@ -108,7 +111,7 @@ def ensure_desktop_file() -> Path:
 
     Same $SUDO_USER home as the systemd unit: sudo install must not write
     into /root/.local.
-    @tags: #action/save #model/desktop #side-effect/file #side-effect/mutation #scope/user
+    @tags: #action/save #format/string #model/desktop #scope/user #side-effect/file #side-effect/mutation #subject/desktop #type/helper
     """
     path = desktop_path()
     share_dir = path.parent
@@ -123,8 +126,8 @@ def ensure_desktop_file() -> Path:
             [
                 "[Desktop Entry]",
                 "Type=Application",
-                "Name=Microsoft Keyboard",
-                "Comment=Assign extra keyboard keys",
+                "Name=OffKeys",
+                "Comment=Bind extra keyboard keys to shortcuts, apps, and commands.",
                 f"Exec={python} {REPO_ROOT / 'mskb.py'} gui",
                 "Icon=input-keyboard",
                 "Terminal=false",

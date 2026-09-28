@@ -41,7 +41,7 @@ class RemoveAutostartTests(unittest.TestCase):
                 "[Desktop Entry]\n"
                 "Type=Application\n"
                 "Exec=/usr/bin/python3 /home/theoarena/Dev/microsoft-keyboard/mskb.py run\n"
-                "Name=Microsoft Keyboard\n"
+                "Name=Old extra-key mapper\n"
             )
             keep = base / "other.desktop"
             keep.write_text(

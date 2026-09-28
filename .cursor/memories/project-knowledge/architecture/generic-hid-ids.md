@@ -3,8 +3,8 @@ summary: "Bindings nested by vid:pid; load does not merge factory Favorites; dec
 created: 2026-09-28
 updated: 2026-09-28
 category: architecture
-tags: [hid, bindings, mapper]
-related: [mskb_hid.py, mskb_bindings.py, mskb_mapper.py, mskb_gui.py, udev/99-mskb.rules]
+tags: [hid, bindings, mapper, tested-devices]
+related: [mskb_hid.py, mskb_bindings.py, mskb_mapper.py, mskb_gui.py, udev/99-mskb.rules, README.md]
 status: resolved
 ---
 
@@ -25,3 +25,5 @@ A learned key is `{vid}:{pid}:{page:04x}:{usage:04x}`, plus `:{value:x}` when th
 `udev/99-mskb.rules` grants seat read on every hidraw. `udev/61-mskb.hwdb` and `bind-driver` stay `045e:0745` only.
 
 Ceiling: one matched binding per report, no chords. Identity is product `vid:pid`, not USB serial. A descriptor the parser cannot read falls back to `decode_report` only on the 2000.
+
+README **Tested devices** is the public support list (today only Wireless Keyboard 2000 / `045e:0745`). Other extra-key HID devices can still be learned; they stay off that table until actually tested.

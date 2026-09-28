@@ -39,6 +39,10 @@ ACTION_ICONS = {
     "command": "utilities-terminal-symbolic",
     "none": "action-unavailable-symbolic",
 }
+WINDOW_TITLE = "OffKeys"
+"""Public window and app-grid title; CLI, config, and unit name stay mskb.
+@tags: #format/string #model/desktop #scope/gui #subject/desktop #subject/form #type/constant
+"""
 WINDOW_SUBTITLE = "What each extra key does"
 UNSAVED_SUBTITLE = "Unsaved changes"
 # Selected cards use the accent fill. `.dimmed` at partial opacity fails
@@ -213,7 +217,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
         """Build the keyboard picker, key cards, and action form.
         @tags: #model/binding #model/config #model/hid #scope/gui #subject/form #type/window
         """
-        super().__init__(application=app, title="Microsoft Keyboard")
+        super().__init__(application=app, title=WINDOW_TITLE)
         self.set_default_size(880, 680)
         # Breakpoints ignore a window with no minimum. 360 still fits the stack.
         self.set_size_request(360, 480)
@@ -255,7 +259,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
 
         header = Adw.HeaderBar()
         self.window_title = Adw.WindowTitle(
-            title="Microsoft Keyboard", subtitle=WINDOW_SUBTITLE
+            title=WINDOW_TITLE, subtitle=WINDOW_SUBTITLE
         )
         header.set_title_widget(self.window_title)
 

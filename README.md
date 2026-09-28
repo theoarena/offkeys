@@ -1,24 +1,26 @@
-# Microsoft Keyboard for Linux
+# OffKeys
 
-The app assigns extra keys that Linux does not deliver, starting with My Favorites on the Microsoft Wireless Keyboard 2000.
+Linux app to bind extra keyboard keys to shortcuts, apps, and commands.
 
-[What the app does](#what-the-app-does) • [Who it's for](#who-its-for) • [Use the app](#use-the-app) • [Install](#install)
+[What the app does](#what-the-app-does) • [Who it's for](#who-its-for) • [Use the app](#use-the-app) • [Install](#install) • [Tested devices](#tested-devices) • [Tested systems](#tested-systems)
 
 ## What the app does
 
-On Linux, some extra keys never reach the desktop. **Microsoft Keyboard** assigns them, starting with My Favorites on the Microsoft Wireless Keyboard 2000.
+On Linux, some extra keys never reach the desktop. **OffKeys** assigns them: open an app, send a system shortcut, or run a command.
 
 Typing and the pointer are not mapped here.
 
 Open it from your app grid. Choose the keyboard, pick a key for that keyboard, choose what it should do, and apply. The key works immediately and after the next login.
 
+The Microsoft Wireless Keyboard 2000 is the default, with My Favorites already named. Other extra-key devices can be learned; they stay off [Tested devices](#tested-devices) until someone actually tests them.
+
 ## Who it's for
 
-You use a keyboard on a Linux desktop, such as GNOME or Zorin, and you want an extra key to open an app, run a command, or trigger a shortcut. The Wireless Keyboard 2000 is the default.
+You use a keyboard on a Linux desktop, such as GNOME or Zorin, and you want an extra key to open an app, run a command, or trigger a shortcut.
 
 ## Use the app
 
-The window is titled **Microsoft Keyboard**.
+The window is titled **OffKeys**.
 
 1. Choose the keyboard. The keys on the screen belong to that keyboard. A keyboard you have not set up yet starts with none, unless it is the Wireless Keyboard 2000 (My Favorites are already there).
 2. Pick a listed key, or add one by pressing it. The window asks you to press the extra key, and **Cancel** stops listening.
@@ -45,7 +47,7 @@ The key works immediately and after the next login. Closing the window with chan
 
 ## Install
 
-You do this once. After that, open **Microsoft Keyboard** from your apps.
+You do this once. After that, open **OffKeys** from your apps.
 
 ```bash
 git clone https://github.com/theoarena/ms-keyboard-linux.git
@@ -60,3 +62,20 @@ On Ubuntu 24.04 or Zorin 18, install the window toolkit if the app does not open
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 ```
+
+## Tested devices
+
+Only devices we have used ourselves. Other extra-key HID devices can be learned in the app; they stay off this list until tested.
+
+| Device | VID:PID | Notes |
+| --- | --- | --- |
+| Microsoft Wireless Keyboard 2000 | `045e:0745` | Default. My Favorites already named. |
+
+## Tested systems
+
+Developed and tested on Ubuntu-based desktops. Not tested on Fedora, Arch, or other families.
+
+| Distro | Desktop | Notes |
+| --- | --- | --- |
+| Ubuntu 24.04 | GNOME | Developed here. Needs libadwaita 1.5. |
+| Zorin 18 | GNOME | Tested. |

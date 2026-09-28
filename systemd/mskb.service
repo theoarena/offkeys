@@ -1,5 +1,5 @@
 [Unit]
-Description=Microsoft Keyboard 2000 extra-key mapper
+Description=OffKeys extra-key mapper
 After=graphical-session.target
 PartOf=graphical-session.target
 

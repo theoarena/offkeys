@@ -1,7 +1,7 @@
 # Operator guide
 
 Install the mapper, assign actions (GUI or CLI), wire systemd, and debug
-hidraw. End users should use the README and the GTK app instead.
+hidraw. End users should use the README and the OffKeys window instead.
 
 The mapper opens whatever `vid:pid` list you save. The Microsoft Wireless
 Keyboard 2000 (`045e:0745`) is the default when that list is absent.
@@ -77,7 +77,7 @@ desktop settings, not here.
 mapper opens. Absent means `045e:0745`. `bindings` is nested by that same
 id: a press on one hidraw only matches keys stored under its `vid:pid`.
 
-The default way to assign keys is the GTK window:
+The default way to assign keys is the OffKeys window:
 
 ```bash
 python3 mskb.py gui
@@ -171,7 +171,7 @@ systemctl --user enable --now mskb.service
 
 `sudo python3 mskb.py install` writes the unit, removes conflicting GNOME
 autostart entries that launch `mskb.py run`, and tries `enable --now` when
-the user bus is reachable. The unit description is `HID extra-key mapper`.
+the user bus is reachable. The unit description is `OffKeys extra-key mapper`.
 
 - `enable` — start on future graphical logins (`graphical-session.target`)
 - `--now` — start immediately
