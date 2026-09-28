@@ -1,5 +1,7 @@
 # OffKeys
 
+![OffKeys window assigning extra keys to apps](overview.png)
+
 Linux app to bind extra keyboard keys to shortcuts, apps, and commands.
 
 [What the app does](#what-the-app-does) • [Who it's for](#who-its-for) • [Use the app](#use-the-app) • [Install](#install) • [Tested devices](#tested-devices) • [Tested systems](#tested-systems)

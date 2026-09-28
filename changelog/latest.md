@@ -1,6 +1,7 @@
 ## [latest]
 
 ### Added
+- README hero screenshot (`overview.png`) of the OffKeys window
 - GTK4/libadwaita window (`mskb.py gui`) to assign My Favorites, plus a Restart Mapper header action (`92222a58dc8bdad687461a187cd8c740e27bd7a8`)
 - systemd-only mapper restart: Apply/`enable --now` reload `mskb.service` and remove GNOME autostart entries that launch `mskb.py run` (`92222a58dc8bdad687461a187cd8c740e27bd7a8`)
 - Mapper learns an extra key from any selected HID device as usage id `vid:pid:page:usage` (wider fields include the value); Wireless Keyboard 2000 favorite ids still match first (`a737e6082c2b22c3f9aafa9067b8b7f014cd4255`)
