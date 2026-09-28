@@ -43,7 +43,7 @@ WINDOW_TITLE = "OffKeys"
 """Public window and app-grid title; CLI, config, and unit name stay mskb.
 @tags: #format/string #model/desktop #scope/gui #subject/desktop #subject/form #type/constant
 """
-WINDOW_SUBTITLE = "What each extra key does"
+WINDOW_SUBTITLE = ""
 UNSAVED_SUBTITLE = "Unsaved changes"
 # Selected cards use the accent fill. `.dimmed` at partial opacity fails
 # contrast on that fill, so the caption returns to full opacity.
