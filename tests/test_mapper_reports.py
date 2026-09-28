@@ -100,6 +100,18 @@ class MapperReportTests(unittest.TestCase):
         self.assertEqual(active[("input2", 0x16)], {BINDING_ID: "F13"})
         self.assertEqual(uinput.events.count((183, False)), 1)
 
+    def test_label_does_not_change_firing(self) -> None:
+        bindings = {
+            BINDING_ID: {"key": "F13", "exec": "echo hi", "label": "Home"},
+        }
+        uinput = _FakeUinput()
+        active: dict = {}
+        _handle_report(
+            ("input2", 1), [BINDING_ID], bindings, KEY_TABLE, uinput, active, set()
+        )
+        self.run_exec.assert_called_once_with("echo hi")
+        self.assertEqual(uinput.events, [(183, True)])
+
     def test_status_report_does_not_release(self) -> None:
         bindings = {BINDING_ID: {"key": "F13", "exec": ""}}
         uinput = _FakeUinput()

@@ -65,6 +65,11 @@ class KindBindingTests(unittest.TestCase):
         self.assertEqual(saved["key"], "")
         self.assertEqual(saved["exec"], dual["exec"])
 
+    def test_label_does_not_change_kind(self) -> None:
+        binding = {"key": "F15", "exec": "", "label": "Home"}
+        self.assertEqual(mskb.kind_for_binding(binding), "key")
+        self.assertEqual(mskb.binding_for_kind("key", "F15"), {"key": "F15", "exec": ""})
+
     def test_app_kind_strips_exec(self) -> None:
         saved = mskb.binding_for_kind(
             "app",
@@ -72,6 +77,52 @@ class KindBindingTests(unittest.TestCase):
         )
         self.assertEqual(saved["key"], "")
         self.assertEqual(saved["exec"], "/usr/bin/flatpak run md.obsidian.Obsidian")
+
+
+class BindingLabelTests(unittest.TestCase):
+    def test_strips_and_blank_is_empty(self) -> None:
+        self.assertEqual(mskb.binding_label("  Home  "), "Home")
+        self.assertEqual(mskb.binding_label("   "), "")
+        self.assertEqual(mskb.binding_label(None), "")
+
+    def test_replace_bindings_keeps_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            stored = mskb.binding_label("  Home  ")
+            payload = {
+                "bindings": {
+                    "consumer_0x0223": {"key": "", "exec": "", "label": stored},
+                }
+            }
+            mskb.save_config(path, payload, replace_bindings=True)
+            data = json.loads(path.read_text())
+            self.assertEqual(
+                data["bindings"]["consumer_0x0223"],
+                {"key": "", "exec": "", "label": "Home"},
+            )
+
+
+class KeyCardTextTests(unittest.TestCase):
+    def test_custom_title_keeps_id_as_caption(self) -> None:
+        binding = {"key": "", "exec": "", "label": "Home"}
+        self.assertEqual(
+            mskb.key_card_text("consumer_0x0223", binding, "consumer_0x0223"),
+            ("Home", "consumer_0x0223"),
+        )
+
+    def test_favorite_without_label_has_empty_caption(self) -> None:
+        binding = {"key": "F14", "exec": ""}
+        self.assertEqual(
+            mskb.key_card_text("favorites_1", binding, "Favorite 1"),
+            ("Favorite 1", ""),
+        )
+
+    def test_blank_label_uses_fallback(self) -> None:
+        binding = {"key": "", "exec": "", "label": "   "}
+        self.assertEqual(
+            mskb.key_card_text("consumer_0x0223", binding, "consumer_0x0223"),
+            ("consumer_0x0223", ""),
+        )
 
 
 class ShortcutChoicesTests(unittest.TestCase):

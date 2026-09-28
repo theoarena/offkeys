@@ -4,8 +4,10 @@
 # Writes the same config.json the mapper reads, then restarts the user unit.
 # Lives in a separate module so `probe`/`run` never import GI.
 #
-# The key list is every binding in the file. Apply replaces that map so a
+# The key cards are every binding in the file. Apply replaces that map so a
 # removed id stays gone. Add key learns from the keyboard chosen in the combo.
+# An optional label is only the card title; the dict key stays the id the
+# mapper matches. The id is the second line only when that title is set.
 #
 # ComboRows stay siblings in one PreferencesGroup (shown/hidden) because a
 # ComboRow is a ListBoxRow and cannot live inside a Stack that is also a row.
@@ -21,7 +23,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 import mskb  # noqa: E402
 
@@ -79,15 +81,22 @@ def _copy_bindings(bindings: dict[str, dict]) -> dict[str, dict]:
 
 def _as_binding(value: object) -> dict[str, str]:
     """Project one config entry onto the key/exec pair the form edits.
+
+    A non-empty `label` is kept. Dropping it here would erase a title on the
+    next Apply, because the working map is what gets written.
     @tags: #action/normalize #model/binding #type/helper
     """
     if isinstance(value, dict):
         key = value.get("key")
         command = value.get("exec")
-        return {
+        binding = {
             "key": "" if key is None else str(key),
             "exec": "" if command is None else str(command),
         }
+        label = mskb.binding_label(value.get("label"))
+        if label:
+            binding["label"] = label
+        return binding
     return {"key": "", "exec": ""}
 
 
@@ -149,32 +158,6 @@ def _keyboard_choices(saved: list[str], nodes: list) -> list[tuple[str, str]]:
     return [(key, names.get(key) or key) for key in ordered]
 
 
-def _group_listbox(group: Adw.PreferencesGroup) -> Gtk.ListBox:
-    """ListBox a PreferencesGroup already packs its rows into.
-
-    A second list nested in the group takes arrow keys for the outer row,
-    so the keys themselves never become the selection.
-    @tags: #subject/form #type/helper
-    """
-
-    def walk(widget: Gtk.Widget | None) -> Gtk.ListBox | None:
-        while widget is not None:
-            if isinstance(widget, Gtk.ListBox):
-                return widget
-            found = walk(widget.get_first_child())
-            if found is not None:
-                return found
-            widget = widget.get_next_sibling()
-        return None
-
-    found = walk(group.get_first_child())
-    if found is not None:
-        return found
-    created = Gtk.ListBox()
-    group.add(created)
-    return created
-
-
 def _exit_text(exc: SystemExit) -> str:
     """Toast text from an hidraw open that would have quit the process.
     @tags: #action/normalize #model/hid #subject/form #type/helper
@@ -191,7 +174,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
     """
 
     def __init__(self, app: Adw.Application) -> None:
-        """Build the keyboard picker, key list, and action form.
+        """Build the keyboard picker, key cards, and action form.
         @tags: #model/config #scope/gui #subject/form #type/window
         """
         super().__init__(application=app, title="Microsoft Keyboard")
@@ -321,11 +304,19 @@ class FavoritesWindow(Adw.ApplicationWindow):
             [text, vidpid],
         )
 
-    def _build_keys(self) -> Adw.PreferencesGroup:
-        """Key list plus Add key and Remove for the working map.
+    def _build_keys(self) -> Gtk.Box:
+        """Key cards plus Add key and Remove for the working map.
+
+        The flow is its own selection widget. Nesting it in a preferences
+        list would hand arrow keys to that list, so the cards never select.
         @tags: #model/binding #subject/form #type/window
         """
-        group = Adw.PreferencesGroup(title="Keys")
+        section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        header = Gtk.Box(spacing=6)
+        title = Gtk.Label(label="Keys", xalign=0, hexpand=True)
+        title.add_css_class("heading")
+        header.append(title)
+
         controls = Gtk.Box(spacing=6)
         self.add_key_btn = Gtk.Button(label="Add key")
         self.add_key_btn.connect("clicked", self._on_add_key)
@@ -336,20 +327,34 @@ class FavoritesWindow(Adw.ApplicationWindow):
         self.remove_btn.connect("clicked", self._on_remove)
         controls.append(self.add_key_btn)
         controls.append(self.remove_btn)
-        group.set_header_suffix(controls)
+        header.append(controls)
+        section.append(header)
 
-        self.key_list = _group_listbox(group)
-        self.key_list.set_selection_mode(Gtk.SelectionMode.BROWSE)
-        self.key_list.update_property([Gtk.AccessibleProperty.LABEL], ["Keys"])
-        self.key_list.connect("row-selected", self._on_key_selected)
-        return group
+        self.key_flow = Gtk.FlowBox()
+        self.key_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.key_flow.set_homogeneous(True)
+        self.key_flow.set_min_children_per_line(1)
+        self.key_flow.set_max_children_per_line(3)
+        self.key_flow.set_column_spacing(6)
+        self.key_flow.set_row_spacing(6)
+        self.key_flow.set_hexpand(True)
+        self.key_flow.set_vexpand(False)
+        self.key_flow.set_valign(Gtk.Align.START)
+        self.key_flow.update_property([Gtk.AccessibleProperty.LABEL], ["Keys"])
+        self.key_flow.connect("selected-children-changed", self._on_card_selected)
+        section.append(self.key_flow)
+        return section
 
     def _build_form(self) -> Adw.PreferencesGroup:
-        """Action type and value rows (app, shortcut, command).
+        """Name plus action type and value rows (app, shortcut, command).
         @tags: #model/binding #subject/form #type/window
         """
         group = Adw.PreferencesGroup()
         self.form_group = group
+
+        self.name_row = Adw.EntryRow(title="Name")
+        self.name_row.connect("changed", self._on_form_changed)
+        group.add(self.name_row)
 
         self.action_row = Adw.ComboRow(title="Action")
         _fill_combo(self.action_row, list(ACTION_LABELS))
@@ -375,42 +380,117 @@ class FavoritesWindow(Adw.ApplicationWindow):
         group.add(self.command_row)
         return group
 
-    def _key_title(self, key_id: str) -> str:
-        """Friendly favorite name, or the raw id when it is not one of those.
+    def _card_label(self, child: Gtk.FlowBoxChild, name: str) -> Gtk.Label | None:
+        """Find a named label inside a key card.
         @tags: #subject/form #type/helper
         """
-        return FAVORITE_A11Y.get(key_id, key_id)
+        box = child.get_child()
+        if box is None:
+            return None
+        widget = box.get_first_child()
+        while widget is not None:
+            if isinstance(widget, Gtk.Label) and widget.get_name() == name:
+                return widget
+            widget = widget.get_next_sibling()
+        return None
+
+    def _paint_key_card(self, child: Gtk.FlowBoxChild, key_id: str) -> None:
+        """Show the custom title, and the id under it when one is set.
+
+        Two keys can share a title. The caption keeps the HID id visible
+        without making it the name the grid is scanned by.
+        @tags: #subject/form #side-effect/mutation #type/window
+        """
+        title, caption = mskb.key_card_text(
+            key_id,
+            self.working.get(key_id),
+            FAVORITE_A11Y.get(key_id, key_id),
+        )
+        title_label = self._card_label(child, "title")
+        caption_label = self._card_label(child, "caption")
+        if title_label is not None:
+            title_label.set_label(title)
+        if caption_label is not None:
+            caption_label.set_label(caption)
+            caption_label.set_visible(bool(caption))
+        child.set_tooltip_text(key_id if caption else title)
+        child.update_property(
+            [Gtk.AccessibleProperty.LABEL, Gtk.AccessibleProperty.DESCRIPTION],
+            [title, caption],
+        )
+
+    def _make_key_card(self, key_id: str) -> Gtk.FlowBoxChild:
+        """One selectable card whose widget name is the HID id.
+        @tags: #subject/form #type/window
+        """
+        title_label = Gtk.Label(xalign=0.5, hexpand=True)
+        title_label.set_name("title")
+        title_label.set_ellipsize(Pango.EllipsizeMode.END)
+        title_label.set_max_width_chars(16)
+        caption_label = Gtk.Label(xalign=0.5, hexpand=True)
+        caption_label.set_name("caption")
+        caption_label.set_ellipsize(Pango.EllipsizeMode.END)
+        caption_label.set_max_width_chars(18)
+        caption_label.add_css_class("caption")
+        caption_label.add_css_class("dimmed")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+        box.append(title_label)
+        box.append(caption_label)
+
+        child = Gtk.FlowBoxChild()
+        child.set_name(key_id)
+        child.add_css_class("card")
+        child.set_child(box)
+        self._paint_key_card(child, key_id)
+        return child
+
+    def _refresh_selected_card(self) -> None:
+        """Repaint the selected key card from the working map without rebuilding.
+
+        Rebuilding on each keystroke drops focus from the Name field.
+        @tags: #subject/form #side-effect/mutation #type/window
+        """
+        if not self.current_id:
+            return
+        selected = self.key_flow.get_selected_children()
+        if not selected:
+            return
+        child = selected[0]
+        if not isinstance(child, Gtk.FlowBoxChild) or child.get_name() != self.current_id:
+            return
+        self._paint_key_card(child, self.current_id)
 
     def _rebuild_keys(self, select: str | None = None) -> None:
-        """Repaint the key list and load the form for the row that stays selected.
+        """Repaint the key cards and load the form for the card that stays selected.
 
-        Selection changes while rows are removed are ignored so a rebuild does
+        Selection changes while cards are removed are ignored so a rebuild does
         not write the previous form onto the wrong id.
         @tags: #model/binding #side-effect/mutation #subject/form #type/window
         """
         self._syncing = True
-        child = self.key_list.get_first_child()
+        child = self.key_flow.get_first_child()
         while child is not None:
             nxt = child.get_next_sibling()
-            self.key_list.remove(child)
+            self.key_flow.remove(child)
             child = nxt
         if select is None:
             select = self.current_id
         if select not in self.working:
             select = next(iter(self.working), None)
-        selected_row = None
+        selected_child = None
         for key_id in self.working:
-            title = self._key_title(key_id)
-            row = Adw.ActionRow(title=title)
-            row.set_name(key_id)
-            row.set_tooltip_text(title)
-            row.update_property([Gtk.AccessibleProperty.LABEL], [title])
-            self.key_list.append(row)
+            card = self._make_key_card(key_id)
+            self.key_flow.insert(card, -1)
             if key_id == select:
-                selected_row = row
+                selected_child = card
         self.current_id = select
-        if selected_row is not None:
-            self.key_list.select_row(selected_row)
+        if selected_child is not None:
+            self.key_flow.select_child(selected_child)
         self._syncing = False
         self.remove_btn.set_sensitive(select is not None)
         self._load_form()
@@ -451,13 +531,16 @@ class FavoritesWindow(Adw.ApplicationWindow):
         self.devices.append(vidpid)
         self._update_dirty()
 
-    def _on_key_selected(self, _box: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
+    def _on_card_selected(self, flow: Gtk.FlowBox) -> None:
         """Save the form onto the previous id, then load the newly selected one.
         @tags: #model/binding #side-effect/mutation #subject/form #type/window
         """
-        if self._syncing or row is None:
+        if self._syncing:
             return
-        key_id = row.get_name()
+        selected = flow.get_selected_children()
+        if not selected:
+            return
+        key_id = selected[0].get_name()
         if not key_id or key_id == self.current_id:
             return
         self._write_form_to_working()
@@ -608,6 +691,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
             return
         self._write_form_to_working()
         self._show_value_rows(self._selected_kind())
+        self._refresh_selected_card()
         self._update_dirty()
 
     def _selected_kind(self) -> str:
@@ -644,6 +728,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
         """
         if not self.current_id or self.current_id not in self.working:
             self._syncing = True
+            self.name_row.set_text("")
             self.action_row.set_selected(ACTION_KINDS.index("none"))
             self.command_row.set_text("")
             self._syncing = False
@@ -657,6 +742,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
 
         self.form_group.set_sensitive(True)
         self._syncing = True
+        self.name_row.set_text(mskb.binding_label(binding.get("label")))
         self.action_row.set_selected(ACTION_KINDS.index(kind))
 
         if self.apps:
@@ -698,6 +784,10 @@ class FavoritesWindow(Adw.ApplicationWindow):
 
     def _write_form_to_working(self) -> None:
         """Persist the visible form into working bindings for current_id.
+
+        `binding_for_kind` stays exclusive on key and exec. The title is
+        attached afterward so an action edit does not drop it, and a blank
+        title is left off the dict.
         @tags: #action/normalize #model/binding #side-effect/mutation #subject/form #type/window
         """
         if not self.current_id or self.current_id not in self.working:
@@ -711,7 +801,11 @@ class FavoritesWindow(Adw.ApplicationWindow):
             value = self.command_row.get_text()
         else:
             value = ""
-        self.working[self.current_id] = mskb.binding_for_kind(kind, value)
+        binding = mskb.binding_for_kind(kind, value)
+        label = mskb.binding_label(self.name_row.get_text())
+        if label:
+            binding["label"] = label
+        self.working[self.current_id] = binding
 
     def _update_dirty(self) -> None:
         """Enable Apply when the key map or device list differs from the last save.

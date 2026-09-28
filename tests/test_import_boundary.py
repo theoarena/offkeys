@@ -27,6 +27,8 @@ PUBLIC_NAMES = (
     "kind_for_binding",
     "shortcut_key_choices",
     "binding_for_kind",
+    "binding_label",
+    "key_card_text",
     "restart_mapper",
     "mapper_status_message",
     "save_config",

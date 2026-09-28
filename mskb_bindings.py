@@ -2,7 +2,8 @@
 #
 # config.json load/save and GUI exclusive-mode helpers.
 # The mapper still dual-fires when both key and exec are set; this
-# module only projects that contract for the favorites window.
+# module only projects that contract for the favorites window. An optional
+# `label` is a display title and is not part of that pair.
 #
 # Used by: mskb_gui.py (via mskb), mskb_mapper.py, mskb_install.py
 # See also: mskb_paths.py
@@ -143,11 +144,39 @@ def kind_for_binding(binding: dict) -> str:
     return "none"
 
 
+def binding_label(value: object) -> str:
+    """Display title stored on a binding, or empty when none is set.
+
+    Whitespace is not a title. The mapper never reads this field; the HID
+    id stays the dict key that matches a report.
+    @tags: #action/normalize #model/binding #subject/form #type/helper
+    """
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def key_card_text(key_id: str, binding: object, fallback: str) -> tuple[str, str]:
+    """Title and caption for one key card.
+
+    A custom title keeps the HID id underneath so two cards can share a name.
+    Without a title the fallback is the only line: favorite names stay single,
+    and a learned id with no title stays the raw id.
+    @tags: #action/normalize #model/binding #subject/form #type/helper
+    """
+    raw = binding.get("label") if isinstance(binding, dict) else None
+    label = binding_label(raw)
+    if label:
+        return label, key_id
+    return fallback, ""
+
+
 def binding_for_kind(kind: str, value: str = "") -> dict:
     """Build a binding with only one of `key` or `exec` set.
 
     Dual-fire is a mapper feature, not a GUI mode. A later checkbox can opt
-    back into both fields; until then writes stay exclusive.
+    back into both fields; until then writes stay exclusive. The display
+    title is not part of this pair; callers attach `label` afterward.
     @tags: #action/normalize #model/binding #model/config #subject/form #type/helper
     """
     if kind in ("command", "app"):

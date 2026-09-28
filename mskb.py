@@ -22,6 +22,8 @@ from mskb_bindings import (  # noqa: F401
     FAVORITE_IDS,
     SYSTEM_SHORTCUT_KEYS,
     binding_for_kind,
+    binding_label,
+    key_card_text,
     devices_from_config,
     ensure_config,
     kind_for_binding,
