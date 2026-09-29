@@ -218,7 +218,8 @@ class FavoritesWindow(Adw.ApplicationWindow):
         @tags: #model/binding #model/config #model/hid #scope/gui #subject/form #type/window
         """
         super().__init__(application=app, title=WINDOW_TITLE)
-        self.set_default_size(880, 680)
+        # 520 stays under the 720 breakpoint, so the window opens stacked.
+        self.set_default_size(520, 680)
         # Breakpoints ignore a window with no minimum. 360 still fits the stack.
         self.set_size_request(360, 480)
         self.set_icon_name("input-keyboard")
