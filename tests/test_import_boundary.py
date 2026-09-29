@@ -28,6 +28,7 @@ PUBLIC_NAMES = (
     "kind_for_binding",
     "shortcut_key_choices",
     "action_summary",
+    "as_binding",
     "binding_for_kind",
     "binding_label",
     "ids_sharing_title",

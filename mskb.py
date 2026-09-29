@@ -23,6 +23,7 @@ from mskb_bindings import (  # noqa: F401
     KEYBOARD_2000,
     SYSTEM_SHORTCUT_KEYS,
     action_summary,
+    as_binding,
     binding_for_kind,
     binding_label,
     bindings_for_device,

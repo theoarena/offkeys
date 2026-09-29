@@ -42,18 +42,41 @@ class StripFieldCodesTests(unittest.TestCase):
 class KindBindingTests(unittest.TestCase):
     def test_round_trip_none(self) -> None:
         binding = mskb.binding_for_kind("none")
-        self.assertEqual(binding, {"key": "", "exec": ""})
+        self.assertEqual(binding, {"key": "", "exec": "", "kind": "none"})
         self.assertEqual(mskb.kind_for_binding(binding), "none")
 
     def test_round_trip_key(self) -> None:
         binding = mskb.binding_for_kind("key", "F15")
-        self.assertEqual(binding, {"key": "F15", "exec": ""})
+        self.assertEqual(binding, {"key": "F15", "exec": "", "kind": "key"})
         self.assertEqual(mskb.kind_for_binding(binding), "key")
 
     def test_round_trip_command(self) -> None:
         binding = mskb.binding_for_kind("command", "echo hi")
-        self.assertEqual(binding, {"key": "", "exec": "echo hi"})
+        self.assertEqual(binding, {"key": "", "exec": "echo hi", "kind": "command"})
         self.assertEqual(mskb.kind_for_binding(binding), "command")
+
+    def test_same_exec_keeps_app_and_command_apart(self) -> None:
+        app = mskb.binding_for_kind("app", "btop")
+        command = mskb.binding_for_kind("command", "btop")
+        self.assertEqual(app, {"key": "", "exec": "btop", "kind": "app"})
+        self.assertEqual(command, {"key": "", "exec": "btop", "kind": "command"})
+        self.assertEqual(mskb.kind_for_binding(app), "app")
+        self.assertEqual(
+            mskb.kind_for_binding(command, installed_execs=["btop"]),
+            "command",
+        )
+
+    def test_missing_kind_matching_desktop_is_app(self) -> None:
+        binding = {"key": "", "exec": "btop"}
+        self.assertEqual(mskb.kind_for_binding(binding), "command")
+        self.assertEqual(
+            mskb.kind_for_binding(binding, installed_execs=["btop"]),
+            "app",
+        )
+
+    def test_unknown_kind_falls_back(self) -> None:
+        binding = {"key": "F15", "exec": "", "kind": "bogus"}
+        self.assertEqual(mskb.kind_for_binding(binding), "key")
 
     def test_dual_fire_loads_as_command_and_save_clears_key(self) -> None:
         dual = {
@@ -63,12 +86,16 @@ class KindBindingTests(unittest.TestCase):
         self.assertEqual(mskb.kind_for_binding(dual), "command")
         saved = mskb.binding_for_kind("command", dual["exec"])
         self.assertEqual(saved["key"], "")
+        self.assertEqual(saved["kind"], "command")
         self.assertEqual(saved["exec"], dual["exec"])
 
     def test_label_does_not_change_kind(self) -> None:
         binding = {"key": "F15", "exec": "", "label": "Home"}
         self.assertEqual(mskb.kind_for_binding(binding), "key")
-        self.assertEqual(mskb.binding_for_kind("key", "F15"), {"key": "F15", "exec": ""})
+        self.assertEqual(
+            mskb.binding_for_kind("key", "F15"),
+            {"key": "F15", "exec": "", "kind": "key"},
+        )
 
     def test_app_kind_strips_exec(self) -> None:
         saved = mskb.binding_for_kind(
@@ -76,7 +103,28 @@ class KindBindingTests(unittest.TestCase):
             "/usr/bin/flatpak run --file-forwarding md.obsidian.Obsidian @@u %U @@",
         )
         self.assertEqual(saved["key"], "")
+        self.assertEqual(saved["kind"], "app")
         self.assertEqual(saved["exec"], "/usr/bin/flatpak run md.obsidian.Obsidian")
+
+
+class AsBindingTests(unittest.TestCase):
+    def test_keeps_label_and_known_kind(self) -> None:
+        stored = mskb.as_binding(
+            {"key": "", "exec": "btop", "label": "  Star  ", "kind": "command"}
+        )
+        self.assertEqual(
+            stored,
+            {"key": "", "exec": "btop", "label": "Star", "kind": "command"},
+        )
+
+    def test_drops_blank_label_and_unknown_kind(self) -> None:
+        stored = mskb.as_binding(
+            {"key": "F13", "exec": "", "label": "   ", "kind": "desktop"}
+        )
+        self.assertEqual(stored, {"key": "F13", "exec": ""})
+
+    def test_non_dict_is_empty_pair(self) -> None:
+        self.assertEqual(mskb.as_binding(None), {"key": "", "exec": ""})
 
 
 class BindingLabelTests(unittest.TestCase):

@@ -8,8 +8,10 @@
 # Apply replaces the nested maps so a removed id stays gone on that
 # device, and the other keyboards keep theirs. Add key learns from the
 # selected hidraw. An optional label is only the card title; the dict
-# key stays the id the mapper matches. The card caption is what the key
-# does. The id is a third line only when two cards share a title, and
+# key stays the id the mapper matches. An optional kind is the saved
+# action (app, command, key, none) so Open app and Command stay apart
+# when they share an exec. The mapper ignores kind. The card caption is
+# what the key does. The id is a third line only when two cards share a title, and
 # always the tooltip, so the grid is scanned by the action.
 #
 # The key flow stays outside any preferences list. Arrow keys on a list
@@ -116,27 +118,6 @@ def _copy_maps(maps: dict[str, dict[str, dict]]) -> dict[str, dict[str, dict]]:
     return {vidpid: _copy_bindings(bucket) for vidpid, bucket in maps.items()}
 
 
-def _as_binding(value: object) -> dict[str, str]:
-    """Project one config entry onto the key/exec pair the form edits.
-
-    A non-empty `label` is kept. Dropping it here would erase a title on the
-    next Apply, because the working map is what gets written.
-    @tags: #action/normalize #model/binding #type/helper
-    """
-    if isinstance(value, dict):
-        key = value.get("key")
-        command = value.get("exec")
-        binding = {
-            "key": "" if key is None else str(key),
-            "exec": "" if command is None else str(command),
-        }
-        label = mskb.binding_label(value.get("label"))
-        if label:
-            binding["label"] = label
-        return binding
-    return {"key": "", "exec": ""}
-
-
 def _keyboard_choices(saved: list[str], nodes: list) -> list[tuple[str, str]]:
     """Union of saved vid:pid values and plugged extra-key interfaces.
 
@@ -241,7 +222,7 @@ class FavoritesWindow(Adw.ApplicationWindow):
         self.devices = list(mskb.devices_from_config(loaded))
         self.original_devices = list(self.devices)
         self.maps = {
-            vid: {kid: _as_binding(bind) for kid, bind in bucket.items()}
+            vid: {kid: mskb.as_binding(bind) for kid, bind in bucket.items()}
             for vid, bucket in (loaded.get("bindings") or {}).items()
         }
         self.original_maps = _copy_maps(self.maps)
@@ -1116,13 +1097,13 @@ class FavoritesWindow(Adw.ApplicationWindow):
         return None
 
     def _kind_for_form(self, binding: dict) -> str:
-        """Classify binding for the action combo, treating known exec as Open app.
+        """Classify binding for the action combo.
+
+        A stored `kind` wins. Only a file that has no `kind` still treats a
+        known desktop exec as Open app.
         @tags: #action/normalize #model/binding #subject/form #type/helper
         """
-        kind = mskb.kind_for_binding(binding)
-        if kind == "command" and self._app_index_for(binding.get("exec") or "") is not None:
-            return "app"
-        return kind
+        return mskb.kind_for_binding(binding, installed_execs=self._app_commands)
 
     def _load_form(self) -> None:
         """Populate form widgets from the selected working binding.
@@ -1208,9 +1189,10 @@ class FavoritesWindow(Adw.ApplicationWindow):
     def _write_form_to_working(self) -> None:
         """Persist the visible form into working bindings for current_id.
 
-        `binding_for_kind` stays exclusive on key and exec. The title is
-        attached afterward so an action edit does not drop it, and a blank
-        title is left off the dict.
+        `binding_for_kind` stays exclusive on key and exec and records `kind`,
+        so switching Open app to Command is a change even when the command
+        text is the same. The title is attached afterward so an action edit
+        does not drop it, and a blank title is left off the dict.
         @tags: #action/normalize #model/binding #side-effect/mutation #subject/form #type/window
         """
         if not self.current_id or self.current_id not in self.working:

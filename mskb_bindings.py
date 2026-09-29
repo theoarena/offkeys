@@ -4,8 +4,10 @@
 # Bindings are nested by vid:pid so two keyboards do not share a map.
 # A flat file from before that nest is migrated on load. The mapper still
 # dual-fires when both key and exec are set; this module only projects
-# that contract for the favorites window. An optional `label` is a display
-# title and is not part of that pair.
+# that contract for the favorites window. Optional `label` is a display
+# title. Optional `kind` is the GUI action (`app`, `command`, `key`,
+# `none`) so Open app and Command stay distinct when they share an exec.
+# The mapper reads neither field.
 # Card captions and keyboard labels are pure strings so the window tests
 # stay free of GTK.
 #
@@ -15,6 +17,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 from mskb_paths import REPO_ROOT, _chown_user, config_path
@@ -306,16 +309,40 @@ def strip_field_codes(command: str) -> str:
     return " ".join(tokens)
 
 
-def kind_for_binding(binding: dict) -> str:
-    """Exclusive GUI mode for a JSON binding.
+"""GUI action ids that may be stored on a binding.
 
-    Runtime still dual-fires when both fields are set. The GUI projects that
-    as Command (exec wins) so the next Apply on this key drops `key`.
+The mapper ignores `kind`. Unknown values are treated as missing so a
+hand-edited file still loads from `key` and `exec`.
+@tags: #model/binding #model/config #subject/form #type/constant
+"""
+BINDING_KINDS = ("app", "key", "command", "none")
+
+
+def kind_for_binding(
+    binding: dict, *, installed_execs: Iterable[str] | None = None
+) -> str:
+    """GUI mode for a binding.
+
+    A stored `kind` wins, so Open app and Command stay distinct when both
+    point at the same executable. Files written before `kind` existed fall
+    back to `key`/`exec`. `installed_execs` is consulted only in that
+    fallback: a matching exec is Open app, otherwise exec is Command and
+    still wins over `key` (dual-fire loads as Command). The mapper never
+    reads `kind`.
     @tags: #action/normalize #model/binding #model/config #subject/form #type/helper
     """
+    stored = binding_label(binding.get("kind"))
+    if stored in BINDING_KINDS:
+        return stored
     command = (binding.get("exec") or "").strip()
     key = (binding.get("key") or "").strip()
     if command:
+        # Legacy files have no kind. A desktop Exec that matches the command
+        # is Open app; anything else, including dual-fire, stays Command.
+        if installed_execs is not None and strip_field_codes(command) in {
+            strip_field_codes(item) for item in installed_execs
+        }:
+            return "app"
         return "command"
     if key:
         return "key"
@@ -332,6 +359,32 @@ def binding_label(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def as_binding(value: object) -> dict[str, str]:
+    """Project one config entry onto the fields the form edits.
+
+    A non-empty `label` and a known `kind` are kept. Dropping `kind` here
+    would erase Open app versus Command on the next Apply, because the
+    working map is what gets written. The mapper still reads only `key`
+    and `exec`.
+    @tags: #action/normalize #model/binding #model/config #subject/form #type/helper
+    """
+    if not isinstance(value, dict):
+        return {"key": "", "exec": ""}
+    key = value.get("key")
+    command = value.get("exec")
+    binding = {
+        "key": "" if key is None else str(key),
+        "exec": "" if command is None else str(command),
+    }
+    label = binding_label(value.get("label"))
+    if label:
+        binding["label"] = label
+    kind = binding_label(value.get("kind"))
+    if kind in BINDING_KINDS:
+        binding["kind"] = kind
+    return binding
 
 
 # A longer shell line does not fit a card. The form still stores the full command.
@@ -427,18 +480,21 @@ def key_card_text(
 
 
 def binding_for_kind(kind: str, value: str = "") -> dict:
-    """Build a binding with only one of `key` or `exec` set.
+    """Build a binding with one of `key` or `exec`, plus the GUI `kind`.
 
     Dual-fire is a mapper feature, not a GUI mode. A later checkbox can opt
-    back into both fields; until then writes stay exclusive. The display
-    title is not part of this pair; callers attach `label` afterward.
+    back into both fields; until then writes stay exclusive. `kind` is
+    stored so the next load does not guess Open app from a matching desktop
+    Exec. The mapper ignores it. The display title is not part of this pair;
+    callers attach `label` afterward.
     @tags: #action/normalize #model/binding #model/config #subject/form #type/helper
     """
-    if kind in ("command", "app"):
-        return {"key": "", "exec": strip_field_codes(value)}
-    if kind == "key":
-        return {"key": (value or "").strip().upper(), "exec": ""}
-    return {"key": "", "exec": ""}
+    resolved = kind if kind in ("command", "app", "key") else "none"
+    if resolved in ("command", "app"):
+        return {"key": "", "exec": strip_field_codes(value), "kind": resolved}
+    if resolved == "key":
+        return {"key": (value or "").strip().upper(), "exec": "", "kind": "key"}
+    return {"key": "", "exec": "", "kind": "none"}
 
 
 def shortcut_key_choices(current: str = "") -> list[str]:

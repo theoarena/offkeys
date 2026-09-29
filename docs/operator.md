@@ -138,9 +138,10 @@ the mapper afterwards (section 4).
 | `key` | Virtual key via uinput. Record it in Zorin Settings → Keyboard → Shortcuts. Empty string = do not emit. |
 | `exec` | Shell command on press. Empty string = do not run a command. |
 | `label` | Optional title shown on the key card. Empty or absent uses the favorite name or the raw id. The mapper ignores it; the object key stays the HID id. |
+| `kind` | Optional GUI mode: `app`, `command`, `key`, or `none`. The mapper ignores it. When it is absent, the window infers from `key`/`exec`, and a command that matches an installed app opens as Open app until the next Apply stores `kind`. After that, Command stays Command across reloads even when the executable is also a desktop app. |
 
 The GUI writes **one** of `key` or `exec` on a binding, never both. It may
-also write `label`. The mapper still fires both if a hand-edited file sets
+also write `label` and `kind`. The mapper still fires both if a hand-edited file sets
 them (Favorite 1 with Obsidian **and** F14).
 
 `exec` is a normal command, not a `.desktop` Exec line. Do not copy

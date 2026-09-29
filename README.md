@@ -27,7 +27,7 @@ The key works immediately and in future sessions.
 | --------------- | ------------------------------------------------------------------------------------ |
 | Open app        | The key opens an app you choose.                                                     |
 | System shortcut | The key sends a function key from **F13** to **F24**, so your desktop can record it. |
-| Command         | The key runs a command you type.                                                     |
+| Command         | The key runs a command you type, including arguments. That choice stays a command after you apply it, even when the same program is also listed as an app. |
 | Nothing         | The key stays quiet.                                                                 |
 
 
